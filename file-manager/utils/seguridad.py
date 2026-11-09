@@ -66,15 +66,20 @@ class Seguridad:
     # ------------------------------------------------------------------ #
     # Validación de rutas
     # ------------------------------------------------------------------ #
-    def validar_existente(self, ruta: Path | str, descripcion: str = "ruta") -> Path:
+    def validar_existente(self, ruta: Path | str, descripcion: str = "la ruta") -> Path:
         """Comprueba que la ruta existe y devuelve su Path absoluto.
+
+        Args:
+            ruta: Ruta a validar.
+            descripcion: Texto descriptivo con artículo incluido
+                (p. ej. ``"el origen"``, ``"la papelera"``).
 
         Raises:
             FileNotFoundError: si la ruta no existe.
         """
         p = Path(ruta).expanduser()
         if not p.exists():
-            raise FileNotFoundError(f"La {descripcion} no existe: {p}")
+            raise FileNotFoundError(f"No existe {descripcion}: {p}")
         return p
 
     def validar_destino(self, destino: Path | str, crear: bool = False) -> Path:

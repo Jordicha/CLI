@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Sequence
 
 from rich.console import Console
+from rich.errors import ConsoleError
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
@@ -123,7 +124,8 @@ class Interfaz:
         ("5", "[magenta]?[/magenta]     Buscar archivos"),
         ("6", "[white]i[/white]     Mostrar información"),
         ("7", "[blue]D[/blue]     Crear carpeta"),
-        ("8", "[yellow]q[/yellow]     Salir"),
+        ("8", "[green]*[/green]     Acciones personalizadas"),
+        ("9", "[yellow]q[/yellow]     Salir"),
     ]
 
     @staticmethod
@@ -148,11 +150,26 @@ class Interfaz:
 
     @staticmethod
     def confirmar(texto: str, por_defecto: bool = False) -> bool:
-        """Pide una confirmación sí/no."""
-        return Confirm.ask(texto, default=por_defecto)
+        """Pide una confirmación sí/no.
+
+        Sin terminal interactiva (EOF) se devuelve ``por_defecto`` que,
+        para operaciones destructivas, es siempre ``False``.
+        """
+        try:
+            return Confirm.ask(texto, default=por_defecto)
+        except EOFError:
+            return por_defecto
 
     @staticmethod
     def pedir_ruta(texto: str = "Ruta") -> str:
-        """Pide una ruta y la devuelve limpia (sin comillas)."""
-        r = Prompt.ask(f"[bold]{texto}[/bold]").strip().strip("'\"")
+        """Pide una ruta y la devuelve limpia (sin comillas).
+
+        Raises:
+            EOFError: si no hay entrada disponible (se propaga para que
+                el flujo cancele la operación de forma controlada).
+        """
+        try:
+            r = Prompt.ask(f"[bold]{texto}[/bold]").strip().strip("'\"")
+        except (EOFError, ConsoleError) as exc:
+            raise EOFError from exc
         return r
