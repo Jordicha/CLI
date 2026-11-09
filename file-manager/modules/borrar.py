@@ -79,7 +79,7 @@ class Borrar:
         resultado: Resultado,
     ) -> None:
         try:
-            ruta = self.seguridad.validar_existente(ruta, "ruta")
+            ruta = self.seguridad.validar_existente(ruta, "la ruta")
             self.seguridad.comprobar_permitido(ruta)
 
             if ruta.is_dir() and not papelera and any(ruta.iterdir()):
@@ -99,6 +99,11 @@ class Borrar:
                     return
 
             if papelera:
+                if self.seguridad.dry_run:
+                    self.interfaz.simulacion(f"Enviar a papelera: {ruta}")
+                    log.info("[DRY-RUN] PAPELERA %s", ruta)
+                    resultado.ok()
+                    return
                 destino = self.seguridad.mover_a_papelera(ruta)
                 accion = f"Enviado a papelera: {destino}"
             else:

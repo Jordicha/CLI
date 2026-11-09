@@ -84,7 +84,7 @@ class Buscar:
             Lista de rutas encontradas.
         """
         try:
-            base = self.seguridad.validar_existente(ruta, "directorio de busqueda")
+            base = self.seguridad.validar_existente(ruta, "el directorio de busqueda")
             self.seguridad.comprobar_permitido(base)
         except (FileNotFoundError, PermissionError) as exc:
             self.interfaz.error(str(exc))

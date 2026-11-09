@@ -6,9 +6,10 @@ expresiones regulares, añadir prefijos/sufijos y numerar archivos.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
-from typing import Callable, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
 
 from modules._resultado import Resultado
 from utils.interfaz import Interfaz
@@ -32,14 +33,22 @@ class Renombrar:
         """Renombra un archivo individual (``mv nombre viejo nuevo``)."""
         resultado = Resultado()
         try:
-            ruta = self.seguridad.validar_existente(origen, "archivo")
+            ruta = self.seguridad.validar_existente(origen, "el archivo")
             self.seguridad.comprobar_permitido(ruta)
-            if "/" in nuevo_nombre or "\\" in nuevo_nombre:
-                destino = ruta.parent / nuevo_nombre
-                destino.parent.mkdir(parents=True, exist_ok=True)
-            else:
-                destino = ruta.parent / nuevo_nombre
+            if not nuevo_nombre or nuevo_nombre in (os.curdir, os.pardir):
+                raise ValueError(f"Nombre de archivo no válido: {nuevo_nombre!r}")
+            destino = ruta.parent / nuevo_nombre
+            if destino != ruta and destino.exists():
+                if destino.is_dir():
+                    raise FileExistsError(f"El destino ya es una carpeta: {destino}")
+                if not self.seguridad.se_puede_sobrescribir(destino, forzar=forzar):
+                    self.interfaz.aviso("Operación cancelada. No se ha renombrado.")
+                    resultado.omitidos += 1
+                    return resultado
             self._ejecutar(ruta, destino, forzar, resultado)
+        except (ValueError, FileExistsError) as exc:
+            self.interfaz.error(str(exc))
+            resultado.errores += 1
         except (FileNotFoundError, PermissionError) as exc:
             self.interfaz.error(str(exc))
             resultado.errores += 1
@@ -95,10 +104,23 @@ class Renombrar:
         original sin extensión). Si no lleva ``{i}`` se añade al final.
         """
         resultado = Resultado()
-        objetivos = [self.seguridad.validar_existente(r, "archivo") for r in rutas]
+        objetivos: List[Path] = []
+        for r in rutas:
+            try:
+                ruta = self.seguridad.validar_existente(r, "el archivo")
+                self.seguridad.comprobar_permitido(ruta)
+                objetivos.append(ruta)
+            except (FileNotFoundError, PermissionError) as exc:
+                self.interfaz.error(str(exc))
+                resultado.errores += 1
         plantilla_usar = plantilla if "{i}" in plantilla else plantilla + "_{i}"
         for i, ruta in enumerate(objetivos, start=empezar_en):
-            nombre = plantilla_usar.format(i=i, nombre=ruta.stem) + ruta.suffix
+            try:
+                nombre = plantilla_usar.format(i=i, nombre=ruta.stem) + ruta.suffix
+            except (KeyError, IndexError, ValueError) as exc:
+                self.interfaz.error(f"Plantilla no válida ({exc}).")
+                resultado.errores += 1
+                return resultado
             destino = ruta.parent / nombre
             self._ejecutar(ruta, destino, forzar, resultado)
         return resultado
@@ -112,7 +134,7 @@ class Renombrar:
         resultado = Resultado()
         for r in rutas:
             try:
-                ruta = self.seguridad.validar_existente(r, "archivo")
+                ruta = self.seguridad.validar_existente(r, "el archivo")
                 self.seguridad.comprobar_permitido(ruta)
                 self._ejecutar(ruta, fn(ruta), forzar, resultado)
             except (FileNotFoundError, PermissionError, re.error) as exc:

@@ -106,7 +106,7 @@ class Organizar:
         """
         resultado = Resultado()
         try:
-            base = self.seguridad.validar_existente(directorio, "directorio")
+            base = self.seguridad.validar_existente(directorio, "el directorio")
             self.seguridad.comprobar_permitido(base)
             self.seguridad.validar_destino(base)
         except (FileNotFoundError, PermissionError) as exc:

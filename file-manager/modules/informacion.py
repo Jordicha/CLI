@@ -30,7 +30,7 @@ class Informacion:
         """Muestra una ficha de información por cada ruta indicada."""
         for r in rutas:
             try:
-                ruta = self.seguridad.validar_existente(r, "ruta")
+                ruta = self.seguridad.validar_existente(r, "la ruta")
                 self._ficha(ruta)
                 log.info("INFO %s", ruta)
             except (FileNotFoundError, PermissionError) as exc:

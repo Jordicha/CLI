@@ -78,7 +78,7 @@ class Mover:
         resultado: Resultado,
     ) -> None:
         try:
-            origen = self.seguridad.validar_existente(origen, "origen")
+            origen = self.seguridad.validar_existente(origen, "el origen")
             self.seguridad.comprobar_permitido(origen)
 
             destino_final = destino_dir / origen.name
@@ -88,7 +88,10 @@ class Mover:
                 return
 
             if destino_final.exists():
-                if no_sobrescribir:
+                if self.seguridad.dry_run:
+                    if no_sobrescribir:
+                        destino_final = self.seguridad.ruta_libre(destino_final)
+                elif no_sobrescribir:
                     destino_final = self.seguridad.ruta_libre(destino_final)
                     self.interfaz.aviso(
                         f"Destino ocupado. Se guardará como: {destino_final.name}"

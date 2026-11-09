@@ -13,6 +13,7 @@ from modules.renombrar import Renombrar
 from modules.buscar import Buscar
 from modules.informacion import Informacion
 from modules.crear import Crear
+from modules.acciones import Acciones
 
 __all__ = [
     "Resultado",
@@ -23,4 +24,5 @@ __all__ = [
     "Buscar",
     "Informacion",
     "Crear",
+    "Acciones",
 ]
