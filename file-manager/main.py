@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from modules import (  # noqa: E402
+    Acciones,
     Borrar,
     Buscar,
     Crear,
@@ -113,9 +114,10 @@ def crear_parser() -> argparse.ArgumentParser:
 
     # renombrar
     p = sub.add_parser("renombrar", help="Renombrar archivos.")
-    p.add_argument("origenes", nargs="+", help="Archivos a renombrar.")
+    p.add_argument("rutas", nargs="+", help="Archivos a renombrar.")
     p.add_argument("--nuevo", metavar="NOMBRE",
-                   help="Nuevo nombre (renombrado individual).")
+                   help="Nuevo nombre. Con 1 archivo es el renombrado directo "
+                   "(equivale a pasar el nombre como 2er argumento).")
     p.add_argument("--prefijo", metavar="TEXTO", help="Anadir prefijo.")
     p.add_argument("--sufijo", metavar="TEXTO", help="Anadir sufijo antes de la extension.")
     p.add_argument("--buscar", metavar="PATRON", help="Buscar patron en el nombre.")
@@ -147,6 +149,22 @@ def crear_parser() -> argparse.ArgumentParser:
     # crear
     p = sub.add_parser("crear", help="Crear carpetas.")
     p.add_argument("rutas", nargs="+", help="Carpetas a crear.")
+    _anadir_comunes(p)
+
+    # acciones
+    p = sub.add_parser(
+        "acciones",
+        help="Gestionar y ejecutar acciones personalizadas (acciones.json).",
+    )
+    p.add_argument(
+        "accion",
+        nargs="?",
+        help="Nombre de la accion a ejecutar. Sin nombre, lista las disponibles.",
+    )
+    p.add_argument("-a", "--archivo", metavar="JSON",
+                   help="Fichero de acciones (por defecto ./acciones.json).")
+    p.add_argument("--crear", action="store_true",
+                   help="Crear una plantilla de acciones.json de ejemplo.")
     _anadir_comunes(p)
 
     return parser
@@ -186,9 +204,20 @@ def cmd_mover(args: argparse.Namespace, seg: Seguridad) -> int:
 
 
 def cmd_borrar(args: argparse.Namespace, seg: Seguridad) -> int:
-    papelera = args.papelera or str(Path.home() / ".file-manager-papelera")
     if not args.permanente:
-        args.papelera = papelera
+        if seg.papelera_dir is None:
+            if not sys.stdin.isatty():
+                Interfaz.error(
+                    "Sin papelera configurada y sin terminal interactiva. "
+                    "Usa --papelera RUTA o --permanente."
+                )
+                return 2
+            papelera = Interfaz.pedir_ruta(
+                "Carpeta que hará de papelera",
+            )
+            args.papelera = papelera
+        if args.papelera:
+            seg.papelera_dir = Path(args.papelera).expanduser()
 
     res = Borrar(seg).borrar(
         args.rutas,
@@ -208,20 +237,25 @@ def cmd_organizar(args: argparse.Namespace, seg: Seguridad) -> int:
 
 def cmd_renombrar(args: argparse.Namespace, seg: Seguridad) -> int:
     r = Renombrar(seg)
-    if args.nuevo:
-        if len(args.origenes) != 1:
-            Interfaz.error("Con --nuevo solo se puede renombrar un archivo.")
+    rutas = list(args.rutas)
+    nuevo = args.nuevo
+    # Forma abreviada: `renombrar archivo.pdf nuevo_nombre.pdf`
+    if nuevo is None and len(rutas) == 2:
+        nuevo = rutas.pop()
+    if nuevo:
+        if len(rutas) != 1:
+            Interfaz.error("Con un nombre nuevo solo se puede renombrar un archivo.")
             return 2
-        res = r.renombrar(args.origenes[0], args.nuevo, forzar=args.yes)
+        res = r.renombrar(rutas[0], nuevo, forzar=args.yes)
     elif args.prefijo is not None:
-        res = r.prefijo(args.origenes, args.prefijo, forzar=args.yes)
+        res = r.prefijo(rutas, args.prefijo, forzar=args.yes)
     elif args.sufijo is not None:
-        res = r.sufijo(args.origenes, args.sufijo, forzar=args.yes)
+        res = r.sufijo(rutas, args.sufijo, forzar=args.yes)
     elif args.buscar is not None:
-        res = r.patron(args.origenes, args.buscar, args.reemplazar,
+        res = r.patron(rutas, args.buscar, args.reemplazar,
                        regex=args.regex, forzar=args.yes)
     elif args.numerar:
-        res = r.numerar(args.origenes, plantilla=args.plantilla, forzar=args.yes)
+        res = r.numerar(rutas, plantilla=args.plantilla, forzar=args.yes)
     else:
         Interfaz.error(
             "Indica una accion: --nuevo, --prefijo, --sufijo, --buscar o --numerar."
@@ -256,6 +290,17 @@ def cmd_crear(args: argparse.Namespace, seg: Seguridad) -> int:
     return _fin(Crear(seg).crear(args.rutas))
 
 
+def cmd_acciones(args: argparse.Namespace, seg: Seguridad) -> int:
+    acciones = Acciones(seg, archivo=args.archivo)
+    if args.crear:
+        res = acciones.plantilla(forzar=args.yes)
+        return 1 if res.errores else 0
+    if args.accion:
+        res = acciones.ejecutar(args.accion, forzar=args.yes)
+        return _fin(res)
+    return acciones.listar()
+
+
 HANDLERS = {
     "mover": cmd_mover,
     "borrar": cmd_borrar,
@@ -264,6 +309,7 @@ HANDLERS = {
     "buscar": cmd_buscar,
     "info": cmd_info,
     "crear": cmd_crear,
+    "acciones": cmd_acciones,
 }
 
 
@@ -281,13 +327,14 @@ def menu_interactivo(seguridad: Seguridad) -> None:
         "5": Buscar(seguridad).menu_interactivo,
         "6": Informacion(seguridad).menu_interactivo,
         "7": Crear(seguridad).menu_interactivo,
+        "8": Acciones(seguridad).menu_interactivo,
     }
     while True:
         try:
             opcion = Interfaz.menu()
         except (EOFError, KeyboardInterrupt):
             break
-        if opcion == "8":
+        if opcion == "9":
             break
         if seguridad.dry_run:
             Interfaz.aviso("MODO SIMULACION activo: no se modificara nada.")

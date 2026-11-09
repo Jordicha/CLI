@@ -1,0 +1,59 @@
+{
+  "ordenar-descargas": {
+    "descripcion": "Clasifica los archivos de ~/Descargas por tipo (imagenes, videos, documentos...).",
+    "pasos": [
+      {
+        "organizar": {
+          "directorio": "~/Descargas",
+          "por": "extension"
+        }
+      }
+    ]
+  },
+  "limpiar-temporales": {
+    "descripcion": "Busca archivos .tmp en la carpeta actual y los envia a la papelera.",
+    "pasos": [
+      {
+        "buscar": {
+          "patron": "*.tmp",
+          "directorio": "."
+        }
+      },
+      {
+        "mover": {
+          "origenes": ["*.tmp"],
+          "destino": "~/.file-manager-papelera",
+          "crear_destino": true,
+          "no_sobrescribir": true
+        }
+      }
+    ]
+  },
+  "informes-mensuales": {
+    "descripcion": "Crea la estructura de informes y copia los CSV de datos a informes/datos.",
+    "pasos": [
+      {
+        "crear": ["informes", "informes/datos"]
+      },
+      {
+        "copiar": {
+          "origenes": ["*.csv"],
+          "destino": "informes/datos",
+          "crear_destino": true,
+          "no_sobrescribir": true
+        }
+      }
+    ]
+  },
+  "reporte-tamano": {
+    "descripcion": "Muestra el tamano total de la carpeta actual y avisa si supera 500 MB.",
+    "pasos": [
+      {
+        "tamano": {
+          "directorio": ".",
+          "alerta_mb": 500
+        }
+      }
+    ]
+  }
+}
