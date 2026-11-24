@@ -249,6 +249,13 @@ Los catálogos se validan por completo antes de ejecutar, de modo que un paso
 inválido no deja efectos parciales. Las invariantes internas usan `assert`
 durante el desarrollo.
 
+La configuración se concentra en `utils/config.py`: `Config.desde_args()` y
+`Config.desde_env()` alimentan las fábricas `crear_seguridad()`,
+`Acciones.desde_config()`, `CatalogoAcciones.desde_config()`,
+`PasosIA.desde_config()` e `IA.desde_config()`. Así la CLI y los módulos
+comparten un único objeto de configuración en lugar de leer el entorno cada
+uno por su cuenta.
+
 ## Seguridad
 
 - Nunca se borra sin **confirmación explícita** (salvo `--yes` + borrado
@@ -273,9 +280,12 @@ file-manager/
 │   ├── buscar.py         # Motor de búsqueda y filtros
 │   ├── informacion.py    # Fichas de metadatos
 │   ├── crear.py          # Creación de carpetas
-│   ├── acciones.py       # Acciones personalizadas desde JSON
+│   ├── acciones.py       # Coordinador de acciones personalizadas
+│   ├── acciones_catalogo.py # Plantilla, carga y validación del catálogo
+│   ├── acciones_ia.py    # Pasos clasificar/renombrar con IA
 │   └── _resultado.py     # Contador éxito/omitidos/errores
 ├── utils/
+│   ├── config.py         # Configuración central y fábricas
 │   ├── errores.py        # Excepciones propias con mensajes humanos
 │   ├── seguridad.py      # Confirmaciones, rutas, papelera, dry-run
 │   ├── logger.py         # Logging a logs/file-manager.log

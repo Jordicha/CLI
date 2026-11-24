@@ -50,103 +50,26 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from modules._resultado import Resultado
+from modules.acciones_catalogo import (
+    ARCHIVO_ACCIONES,
+    OPERACIONES,
+    PLANTILLA,
+    CatalogoAcciones,
+)
+from modules.acciones_ia import PasosIA
 from modules.buscar import Buscar, _tamano_legible
 from modules.crear import Crear
 from modules.informacion import Informacion
 from modules.mover import Mover
-from modules.organizar import CATEGORIAS, CATEGORIA_OTROS, Organizar
+from modules.organizar import Organizar
 from modules.renombrar import Renombrar
+from utils.config import Config
 from utils.errores import AccionNoValida, ConfigError
-from utils.ia import IA, IAError
 from utils.interfaz import Interfaz
 from utils.logger import Logger
 from utils.seguridad import Seguridad
 
 log = Logger.obtener("acciones")
-
-ARCHIVO_ACCIONES = "acciones.json"
-
-OPERACIONES = (
-    "crear",
-    "mover",
-    "copiar",
-    "organizar",
-    "renombrar",
-    "buscar",
-    "tamano",
-    "ejecutar",
-    "clasificar_ia",
-    "renombrar_ia",
-)
-
-CRITERIOS_ORGANIZAR = ("extension", "fecha", "creacion", "modificacion", "tamano")
-TIPOS_BUSQUEDA = ("archivo", "carpeta", "todo")
-MODOS_RENOMBRAR = ("nuevo", "prefijo", "sufijo", "buscar", "numerar")
-
-PLANTILLA: Dict[str, Any] = {
-    "preparar-informes": {
-        "descripcion": "Crea la estructura de informes y copia los CSV de datos.",
-        "pasos": [
-            {"crear": ["informes", "informes/datos"]},
-            {
-                "copiar": {
-                    "origenes": ["*.csv"],
-                    "destino": "informes/datos",
-                    "no_sobrescribir": True,
-                }
-            },
-        ],
-    },
-    "limpiar-temporales": {
-        "descripcion": "Envía a la papelera los .tmp de la carpeta actual.",
-        "pasos": [
-            {"buscar": {"patron": "*.tmp", "directorio": "."}},
-            {
-                "mover": {
-                    "origenes": ["*.tmp"],
-                    "destino": "~/.file-manager-papelera",
-                    "crear_destino": True,
-                    "no_sobrescribir": True,
-                }
-            },
-        ],
-    },
-    "ordenar-descargas": {
-        "descripcion": "Clasifica ~/Descargas por tipo de archivo.",
-        "pasos": [
-            {"organizar": {"directorio": "~/Descargas", "por": "extension"}}
-        ],
-    },
-    "responder-copia": {
-        "descripcion": "Copia los PDF recientes de la carpeta actual a respaldo/.",
-        "pasos": [
-            {
-                "copiar": {
-                    "origenes": ["*.pdf"],
-                    "destino": "respaldo",
-                    "crear_destino": True,
-                    "no_sobrescribir": True,
-                }
-            }
-        ],
-    },
-    "reporte-tamano": {
-        "descripcion": "Avisa si la carpeta actual supera los 500 MB.",
-        "pasos": [{"tamano": {"directorio": ".", "alerta_mb": 500}}],
-    },
-    "clasificar-con-ia": {
-        "descripcion": "Clasifica ~/Descargas con IA; sin IA usa la extensión.",
-        "pasos": [
-            {"clasificar_ia": {"directorio": "~/Descargas", "max": 20}}
-        ],
-    },
-    "renombrar-con-ia": {
-        "descripcion": "Propone nombres claros para los PDF de la carpeta actual.",
-        "pasos": [
-            {"renombrar_ia": {"rutas": ["*.pdf"], "max": 10}}
-        ],
-    },
-}
 
 
 class Acciones:
@@ -157,236 +80,44 @@ class Acciones:
         seguridad: Seguridad,
         archivo: str | Path | None = None,
         interfaz: Optional[Interfaz] = None,
+        config: Optional[Config] = None,
     ) -> None:
-        """Inicializa el gestor de acciones.
-
-        Args:
-            seguridad: Objeto de seguridad compartido (dry-run, restringido...).
-            archivo: Ruta del JSON de acciones. Por defecto se buscan,
-                en orden: ``./acciones.json`` y ``acciones.json`` junto a
-                ``main.py``.
-            interfaz: Interfaz opcional para la salida.
-        """
+        """Coordina catálogo, ejecución de pasos y pasos con IA."""
         self.seguridad = seguridad
+        self.config = config or Config.desde_env()
         self._archivo = Path(archivo).expanduser() if archivo else None
         self.interfaz = interfaz or Interfaz()
+        self.catalogo = CatalogoAcciones.desde_config(
+            self.config, self.interfaz, archivo=archivo
+        )
+        self._ia = PasosIA.desde_config(self.config, seguridad, self.interfaz)
+
+    @classmethod
+    def desde_config(
+        cls,
+        config: Config,
+        seguridad: Seguridad,
+        interfaz: Optional[Interfaz] = None,
+    ) -> "Acciones":
+        """Fábrica del gestor de acciones a partir de la configuración."""
+        return cls(
+            seguridad,
+            archivo=config.archivo_acciones,
+            interfaz=interfaz,
+            config=config,
+        )
 
     # ------------------------------------------------------------------ #
-    # Carga del catálogo
+    # Catálogo
     # ------------------------------------------------------------------ #
     @property
     def ruta_catalogo(self) -> Path:
         """Devuelve la ruta del catálogo (existente o la ubicación por defecto)."""
-        if self._archivo is not None:
-            return self._archivo
-        aqui = Path.cwd() / ARCHIVO_ACCIONES
-        if aqui.exists():
-            return aqui
-        return Path(__file__).resolve().parent.parent / ARCHIVO_ACCIONES
+        return self.catalogo.ruta
 
     def cargar(self, obligatoria: bool = True) -> Dict[str, Any]:
-        """Lee y valida el catálogo de acciones.
-
-        Args:
-            obligatoria: Si es True y el archivo no existe o está vacío,
-                se informa y devuelve ``{}`` (no lanza excepción).
-
-        Returns:
-            Diccionario ``nombre -> definicion``.
-
-        Raises:
-            ConfigError: si el JSON es inválido o no respeta el formato.
-        """
-        ruta = self.ruta_catalogo
-        if not ruta.exists():
-            if obligatoria:
-                self.interfaz.error(
-                    f"No existe el catálogo de acciones: {ruta}\n"
-                    f"Crea una plantilla con: python main.py acciones --crear"
-                )
-            return {}
-        try:
-            datos = json.loads(ruta.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise ConfigError(f"acciones.json no es un JSON válido: {exc}") from exc
-        if not isinstance(datos, dict):
-            raise ConfigError("acciones.json debe ser un objeto { nombre: accion }.")
-        for nombre, accion in datos.items():
-            if not isinstance(nombre, str) or not nombre.strip():
-                raise ConfigError("Los nombres de accion deben ser textos no vacios.")
-            if not isinstance(accion, dict) or "pasos" not in accion:
-                raise ConfigError(
-                    f"La accion '{nombre}' debe tener la forma "
-                    f'{{"descripcion": "...", "pasos": [...]}}.'
-                )
-            if not isinstance(accion["pasos"], list) or not accion["pasos"]:
-                raise ConfigError(
-                    f"Accion '{nombre}', campo 'pasos': debe ser una lista no vacia."
-                )
-            if not isinstance(accion.get("descripcion", ""), str):
-                raise ConfigError(
-                    f"Accion '{nombre}', campo 'descripcion': debe ser texto."
-                )
-            for i, paso in enumerate(accion["pasos"], start=1):
-                self._validar_paso(nombre, i, paso)
-        assert all(
-            isinstance(accion, dict) and isinstance(accion["pasos"], list)
-            for accion in datos.values()
-        )
-        return datos
-
-    def _validar_paso(self, nombre: str, i: int, paso: Any) -> None:
-        """Valida un paso antes de ejecutar nada e informa del campo que falla."""
-        if not isinstance(paso, dict) or len(paso) != 1:
-            raise AccionNoValida(
-                f"Accion '{nombre}', paso {i}: cada paso debe ser un objeto "
-                f"con UNA operacion ({', '.join(OPERACIONES)})."
-            )
-        operacion, argumentos = next(iter(paso.items()))
-        if operacion not in OPERACIONES:
-            raise AccionNoValida(
-                f"Accion '{nombre}', paso {i}: operacion desconocida "
-                f"'{operacion}'. Validas: {', '.join(OPERACIONES)}."
-            )
-        assert operacion in OPERACIONES
-        if operacion == "ejecutar":
-            args: Dict[str, Any] = {"orden": argumentos}
-        elif isinstance(argumentos, dict):
-            args = argumentos
-        else:
-            args = {"valor": argumentos}
-
-        def fallar(campo: str, detalle: str) -> None:
-            raise AccionNoValida(
-                f"Accion '{nombre}', paso {i} ({operacion}): "
-                f"campo '{campo}' {detalle}."
-            )
-
-        def texto(
-            campo: str, obligatorio: bool = True, alias: Optional[str] = None
-        ) -> None:
-            valor = args.get(campo)
-            if valor is None and alias:
-                valor = args.get(alias)
-            if valor is None:
-                if obligatorio:
-                    fallar(campo, "es obligatorio")
-                return
-            if not isinstance(valor, str) or (obligatorio and not valor.strip()):
-                fallar(
-                    campo,
-                    "debe ser texto no vacio" if obligatorio else "debe ser texto",
-                )
-
-        def lista(campo: str, alias: Optional[str] = None) -> None:
-            valor = args.get(campo)
-            if valor is None and alias:
-                valor = args.get(alias)
-            if valor is None:
-                fallar(campo, "es obligatorio")
-            if isinstance(valor, str):
-                if not valor.strip():
-                    fallar(campo, "no puede estar vacio")
-                return
-            if (
-                not isinstance(valor, list)
-                or not valor
-                or not all(isinstance(v, str) and v.strip() for v in valor)
-            ):
-                fallar(campo, "debe ser una lista no vacia de textos")
-
-        def booleano(campo: str) -> None:
-            if campo in args and not isinstance(args[campo], bool):
-                fallar(campo, "debe ser verdadero o falso")
-
-        def numero(campo: str, minimo: float = 0) -> None:
-            valor = args.get(campo)
-            if valor is None:
-                return
-            if isinstance(valor, bool) or not isinstance(valor, (int, float)):
-                fallar(campo, "debe ser un numero")
-            if valor < minimo:
-                fallar(campo, f"debe ser >= {minimo}")
-
-        if operacion == "crear":
-            lista("rutas", alias="valor")
-
-        elif operacion in ("mover", "copiar"):
-            lista("origenes")
-            texto("destino")
-            booleano("crear_destino")
-            booleano("no_sobrescribir")
-
-        elif operacion == "organizar":
-            texto("directorio", alias="valor")
-            criterio = args.get("por")
-            if criterio is not None and criterio not in CRITERIOS_ORGANIZAR:
-                fallar(
-                    "por",
-                    f"debe ser uno de {', '.join(CRITERIOS_ORGANIZAR)}",
-                )
-            booleano("subcarpetas")
-
-        elif operacion == "renombrar":
-            lista("rutas", alias="valor")
-            modos = [
-                modo for modo in MODOS_RENOMBRAR if args.get(modo) not in (None, False)
-            ]
-            if not modos:
-                fallar(
-                    "nuevo/prefijo/sufijo/buscar/numerar", "se requiere al menos uno"
-                )
-            if "nuevo" in modos:
-                texto("nuevo")
-            for campo in ("prefijo", "sufijo", "buscar", "reemplazar", "plantilla"):
-                if campo in args and not isinstance(args[campo], str):
-                    fallar(campo, "debe ser texto")
-            for campo in ("numerar", "regex"):
-                booleano(campo)
-
-        elif operacion == "buscar":
-            for campo in ("patron", "extension", "tamano", "modificado", "directorio"):
-                texto(campo, obligatorio=False)
-            tipo = args.get("tipo")
-            if tipo is not None and tipo not in TIPOS_BUSQUEDA:
-                fallar("tipo", f"debe ser uno de {', '.join(TIPOS_BUSQUEDA)}")
-            maximo = args.get("max")
-            if maximo is not None and (
-                isinstance(maximo, bool) or not isinstance(maximo, int) or maximo < 1
-            ):
-                fallar("max", "debe ser un entero positivo")
-            if args.get("tamano"):
-                try:
-                    Buscar._rango_tamano(args["tamano"])
-                except ValueError as exc:
-                    fallar("tamano", str(exc))
-            if args.get("modificado"):
-                try:
-                    Buscar._rango_fecha(args["modificado"])
-                except (ValueError, AttributeError, TypeError) as exc:
-                    fallar("modificado", str(exc))
-
-        elif operacion == "tamano":
-            texto("directorio", obligatorio=False)
-            numero("alerta_mb")
-
-        elif operacion == "ejecutar":
-            texto("orden")
-            numero("timeout", minimo=1)
-
-        elif operacion in ("clasificar_ia", "renombrar_ia"):
-            if operacion == "clasificar_ia":
-                texto("directorio", obligatorio=False)
-                texto("patron", obligatorio=False)
-            else:
-                lista("rutas", alias="valor")
-            maximo = args.get("max")
-            if maximo is not None and (
-                isinstance(maximo, bool)
-                or not isinstance(maximo, int)
-                or not 1 <= maximo <= 100
-            ):
-                fallar("max", "debe ser un entero entre 1 y 100")
+        """Lee y valida el catálogo antes de ejecutar cualquier paso."""
+        return self.catalogo.cargar(obligatoria)
 
     def plantilla(self, forzar: bool = False) -> Resultado:
         """Crea el archivo de acciones con una plantilla de ejemplo.
@@ -643,10 +374,10 @@ class Acciones:
             return self._ejecutar(args, forzar)
 
         if operacion == "clasificar_ia":
-            return self._clasificar_ia(args, forzar)
+            return self._ia.clasificar(args, forzar)
 
         if operacion == "renombrar_ia":
-            return self._renombrar_ia(args, forzar)
+            return self._ia.renombrar(args, forzar)
 
         self.interfaz.error(f"Operacion no implementada: {operacion}")
         return vacio
@@ -838,144 +569,6 @@ class Acciones:
             self.interfaz.info(texto)
         log.info("TAMANO %s -> %d bytes", ruta, total)
         resultado.ok()
-        return resultado
-
-    def _aviso_sin_ia(self, motivo: str) -> None:
-        self.interfaz.aviso(
-            f"IA no disponible ({motivo}). Se continúa sin IA; "
-            "define OPENAI_API_KEY en .env para activarla."
-        )
-
-    def _mapa_ia(
-        self, sistema: str, usuario: str, permitidos: set
-    ) -> Optional[Dict[str, str]]:
-        try:
-            datos = IA(sin_red=self.seguridad.sin_ia).json(sistema, usuario)
-        except IAError as exc:
-            self._aviso_sin_ia(str(exc))
-            return None
-        if not datos:
-            self.interfaz.aviso("La IA no devolvió propuestas; se continúa sin IA.")
-            return None
-        mapa: Dict[str, str] = {}
-        for clave, valor in datos.items():
-            nombre = Path(str(clave)).name
-            if nombre in permitidos and isinstance(valor, str):
-                mapa[nombre] = valor
-        return mapa
-
-    def _clasificar_ia(self, args: Dict[str, Any], forzar: bool) -> Resultado:
-        """Clasifica archivos con IA; sin IA usa la clasificación local."""
-        resultado = Resultado()
-        base = Path(args.get("directorio") or ".").expanduser()
-        if not base.is_dir():
-            self.interfaz.error(f"No existe el directorio: {base}")
-            resultado.errores += 1
-            return resultado
-        archivos = sorted(
-            p for p in base.glob(args.get("patron") or "*") if p.is_file()
-        )[: args.get("max", 20)]
-        if not archivos:
-            self.interfaz.aviso("No hay archivos para clasificar con IA.")
-            return resultado
-        categorias = list(CATEGORIAS) + [CATEGORIA_OTROS]
-        sistema = (
-            "Clasificas archivos por su nombre. Responde SOLO con un objeto JSON "
-            "que mapee cada nombre recibido a UNA de estas categorías: "
-            + ", ".join(categorias)
-            + ". No inventes claves, no uses rutas y no expliques la respuesta."
-        )
-        usuario = json.dumps(
-            {"archivos": [p.name for p in archivos]}, ensure_ascii=False
-        )
-        mapa = self._mapa_ia(sistema, usuario, {p.name for p in archivos})
-        if mapa is None:
-            self.interfaz.aviso("Clasificación local por extensión (sin IA).")
-            return Organizar(self.seguridad).organizar(str(base), criterio="extension")
-        if not self.seguridad.confirmar(
-            f"La IA propone clasificar {len(mapa)} archivo(s). ¿Aplicar?", forzar=forzar
-        ):
-            self.interfaz.info("Cancelado: no se han movido archivos.")
-            resultado.omitidos += len(mapa)
-            return resultado
-        for nombre, categoria in mapa.items():
-            if categoria not in categorias:
-                self.interfaz.aviso(
-                    f"Categoría desconocida para {nombre}: {categoria}"
-                )
-                resultado.omitidos += 1
-                continue
-            parcial = Mover(self.seguridad).mover(
-                [str(base / nombre)],
-                str(base / categoria),
-                crear_destino=True,
-                no_sobrescribir=True,
-                forzar=forzar,
-            )
-            resultado.exito += parcial.exito
-            resultado.omitidos += parcial.omitidos
-            resultado.errores += parcial.errores
-        return resultado
-
-    def _renombrar_ia(self, args: Dict[str, Any], forzar: bool) -> Resultado:
-        """Propone nombres con IA; sin IA omite el paso y avisa."""
-        vacio = Resultado()
-        rutas = self._requerir_lista(args, "rutas", vacio)
-        if not rutas:
-            return vacio
-        archivos = [p for p in (Path(r).expanduser() for r in rutas) if p.is_file()]
-        archivos = archivos[: args.get("max", 20)]
-        if not archivos:
-            self.interfaz.aviso("No hay archivos para renombrar con IA.")
-            return Resultado()
-        por_nombre = {p.name: p for p in archivos}
-        resultado = Resultado()
-        sistema = (
-            "Propones nombres de archivo claros y breves. Responde SOLO con un "
-            "objeto JSON que mapee cada nombre recibido a un nuevo nombre. "
-            "Conserva la extensión y no uses rutas ni barras."
-        )
-        usuario = json.dumps({"archivos": list(por_nombre)}, ensure_ascii=False)
-        mapa = self._mapa_ia(sistema, usuario, set(por_nombre))
-        if mapa is None:
-            self.interfaz.aviso(
-                f"Sin IA no hay propuestas de nombre; se omiten {len(archivos)} archivo(s)."
-            )
-            resultado.omitidos += len(archivos)
-            return resultado
-        validados: Dict[str, str] = {}
-        usados: set = set()
-        for original, nuevo in mapa.items():
-            if (
-                not nuevo
-                or Path(nuevo).name != nuevo
-                or "/" in nuevo
-                or "\\" in nuevo
-                or nuevo in (".", "..")
-                or Path(nuevo).suffix.lower() != Path(original).suffix.lower()
-                or nuevo in usados
-            ):
-                self.interfaz.aviso(
-                    f"Nombre propuesto descartado para {original}: {nuevo}"
-                )
-                resultado.omitidos += 1
-                continue
-            validados[original] = nuevo
-            usados.add(nuevo)
-        if not validados:
-            return resultado
-        if not self.seguridad.confirmar(
-            f"La IA propone renombrar {len(validados)} archivo(s). ¿Aplicar?", forzar=forzar
-        ):
-            self.interfaz.info("Cancelado: no se han renombrado archivos.")
-            resultado.omitidos += len(validados)
-            return resultado
-        renombrar = Renombrar(self.seguridad)
-        for original, nuevo in validados.items():
-            parcial = renombrar.renombrar(str(por_nombre[original]), nuevo, forzar=forzar)
-            resultado.exito += parcial.exito
-            resultado.omitidos += parcial.omitidos
-            resultado.errores += parcial.errores
         return resultado
 
     def _ejecutar(self, args: Dict[str, Any], forzar: bool) -> Resultado:

@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -34,6 +35,7 @@ from modules import (  # noqa: E402
     Organizar,
     Renombrar,
 )
+from utils.config import Config  # noqa: E402
 from utils.errores import GestorArchivosError  # noqa: E402
 from utils.interfaz import Interfaz  # noqa: E402
 from utils.logger import Logger  # noqa: E402
@@ -187,17 +189,13 @@ def crear_parser() -> argparse.ArgumentParser:
 
 
 # ---------------------------------------------------------------------- #
-# Factoría de seguridad
+# Factorías de configuración y seguridad
 # ---------------------------------------------------------------------- #
 def crear_seguridad(args: argparse.Namespace) -> Seguridad:
-    """Construye el objeto Seguridad compartido a partir de los argumentos."""
-    return Seguridad(
-        dry_run=getattr(args, "dry_run", False),
-        restringido=getattr(args, "restringido", False),
-        rutas_permitidas=getattr(args, "permitido", None) or [],
-        confirmador=lambda pregunta: Interfaz.confirmar(pregunta, por_defecto=False),
-        papelera_dir=getattr(args, "papelera", None),
-        sin_ia=getattr(args, "sin_ia", False),
+    """Construye la seguridad compartida desde la configuración centralizada."""
+    config = Config.desde_args(args)
+    return config.crear_seguridad(
+        lambda pregunta: Interfaz.confirmar(pregunta, por_defecto=False)
     )
 
 
@@ -308,7 +306,8 @@ def cmd_crear(args: argparse.Namespace, seg: Seguridad) -> int:
 
 
 def cmd_acciones(args: argparse.Namespace, seg: Seguridad) -> int:
-    acciones = Acciones(seg, archivo=args.archivo)
+    config = Config.desde_args(args)
+    acciones = Acciones.desde_config(config, seg)
     if args.crear:
         res = acciones.plantilla(forzar=args.yes)
         return 1 if res.errores else 0
@@ -333,7 +332,7 @@ HANDLERS = {
 # ---------------------------------------------------------------------- #
 # Menú interactivo
 # ---------------------------------------------------------------------- #
-def menu_interactivo(seguridad: Seguridad) -> None:
+def menu_interactivo(seguridad: Seguridad, config: Config) -> None:
     """Bucle principal del menú interactivo."""
     Interfaz.banner()
     acciones = {
@@ -344,7 +343,7 @@ def menu_interactivo(seguridad: Seguridad) -> None:
         "5": Buscar(seguridad).menu_interactivo,
         "6": Informacion(seguridad).menu_interactivo,
         "7": Crear(seguridad).menu_interactivo,
-        "8": Acciones(seguridad).menu_interactivo,
+        "8": Acciones.desde_config(config, seguridad).menu_interactivo,
     }
     while True:
         try:
@@ -378,11 +377,11 @@ def main(argv: list[str] | None = None) -> int:
     Logger.obtener("main")
 
     if args.comando is None:
-        # Modo interactivo: la seguridad se configura con valores neutros
-        # y el usuario decide confirmaciones en cada operación.
         papelera = str(Path.home() / ".file-manager-papelera")
-        menu_interactivo(Seguridad(confirmador=lambda p: Interfaz.confirmar(p),
-                                   papelera_dir=papelera))
+        config = replace(Config.desde_env(), papelera=papelera)
+        menu_interactivo(
+            config.crear_seguridad(lambda p: Interfaz.confirmar(p)), config
+        )
         return 0
 
     seguridad = crear_seguridad(args)

@@ -10,6 +10,7 @@ from utils.errores import (
     IAError,
     RutaNoValida,
 )
+from utils.config import Config, cargar_env
 from utils.seguridad import Seguridad
 from utils.logger import Logger
 from utils.interfaz import Interfaz
@@ -24,6 +25,8 @@ __all__ = [
     "DirectorioNoValido",
     "AccesoDenegado",
     "IAError",
+    "Config",
+    "cargar_env",
     "Seguridad",
     "Logger",
     "Interfaz",

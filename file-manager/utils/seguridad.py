@@ -14,7 +14,7 @@ import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Sequence
+from typing import TYPE_CHECKING, Callable, Iterable, List, Optional, Sequence
 
 from utils.errores import (
     AccesoDenegado,
@@ -22,6 +22,9 @@ from utils.errores import (
     DirectorioNoValido,
     RutaNoValida,
 )
+
+if TYPE_CHECKING:
+    from utils.config import Config
 
 
 class Seguridad:
@@ -57,6 +60,20 @@ class Seguridad:
         self._confirmador = confirmador
         self.papelera_dir = Path(papelera_dir).expanduser() if papelera_dir else None
         assert isinstance(self.rutas_permitidas, list)
+
+    @classmethod
+    def desde_config(
+        cls, config: "Config", confirmador: Optional[Callable[[str], bool]] = None
+    ) -> "Seguridad":
+        """Crea una instancia a partir de la configuración compartida."""
+        return cls(
+            dry_run=config.dry_run,
+            restringido=config.restringido,
+            rutas_permitidas=config.rutas_permitidas,
+            confirmador=confirmador,
+            papelera_dir=config.papelera,
+            sin_ia=config.sin_ia,
+        )
 
     # ------------------------------------------------------------------ #
     # Confirmaciones
