@@ -39,37 +39,59 @@ carpetas, tanto desde un **menú interactivo** con colores como mediante
   directorios, confirmaciones obligatorias y registro en log.
 - Compatible con **Linux y Windows**.
 
-## Instalación
+## Instalación en una orden
 
-Requisitos: Python 3.10 o superior.
+Requisitos: Python 3.10 o superior y `pipx` (o `uv`).
+
+```bash
+pipx install git+https://github.com/Jordicha/CLI
+```
+
+Equivalente con `uv`:
+
+```bash
+uv tool install git+https://github.com/Jordicha/CLI
+```
+
+Eso instala el comando `file-manager`, disponible en cualquier carpeta.
+El historial de versiones está en [CHANGELOG.md](../CHANGELOG.md).
+
+Para desarrollar desde el clon:
 
 ```bash
 cd file-manager
 python3 -m venv .venv
 source .venv/bin/activate        # Linux/macOS
 # .venv\Scripts\activate         # Windows
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest -q
 ```
 
 ## Uso
 
+Tras instalar, ejecuta `file-manager` desde cualquier directorio. Dentro del
+clon, el equivalente es `python main.py` desde `file-manager/`.
+
 ### Menú interactivo
 
 ```bash
-python main.py
+file-manager
 ```
 
 ### Comandos directos
 
 ```bash
-python main.py organizar ~/Descargas
-python main.py mover archivo.pdf ~/Documentos/
-python main.py borrar archivo.pdf                 # a la papelera (seguro)
-python main.py buscar "factura"
-python main.py buscar "factura" -e pdf -t ">=1MB" -m "ultimo-30dias"
-python main.py info archivo.pdf
-python main.py renombrar archivo.pdf nuevo_nombre.pdf
-python main.py crear ~/Proyectos/nuevo
+file-manager --help
+file-manager organizar ~/Descargas
+file-manager mover archivo.pdf ~/Documentos/
+file-manager borrar archivo.pdf                   # a la papelera (seguro)
+file-manager buscar "factura"
+file-manager buscar "factura" -e pdf -t ">=1MB" -m "ultimo-30dias"
+file-manager info archivo.pdf
+file-manager renombrar archivo.pdf nuevo_nombre.pdf
+file-manager crear ~/Proyectos/nuevo
+file-manager acciones
+file-manager acciones ordenar-descargas --dry-run
 ```
 
 ### Subórdenes y ejemplos
@@ -77,9 +99,9 @@ python main.py crear ~/Proyectos/nuevo
 #### mover
 
 ```bash
-python main.py mover *.png ~/Imágenes/            # admite comodines
-python main.py mover archivo.pdf ~/Documentos/ --no-sobrescribir
-python main.py mover carpeta ~/backup/ -c         # crea el destino si falta
+file-manager mover *.png ~/Imágenes/            # admite comodines
+file-manager mover archivo.pdf ~/Documentos/ --no-sobrescribir
+file-manager mover carpeta ~/backup/ -c         # crea el destino si falta
 ```
 
 #### borrar
@@ -88,20 +110,20 @@ Por defecto borra **enviando a la papelera** (`~/.file-manager-papelera`
 o la que indiques con `--papelera`):
 
 ```bash
-python main.py borrar archivo.pdf                       # a la papelera
-python main.py borrar archivo.pdf --papelera ~/papelera
-python main.py borrar archivo.pdf --permanente          # borrado definitivo
-python main.py borrar carpeta --permanente -r           # carpeta con contenido
+file-manager borrar archivo.pdf                       # a la papelera
+file-manager borrar archivo.pdf --papelera ~/papelera
+file-manager borrar archivo.pdf --permanente          # borrado definitivo
+file-manager borrar carpeta --permanente -r           # carpeta con contenido
 ```
 
 #### organizar
 
 ```bash
-python main.py organizar ~/Descargas                        # por extensión
-python main.py organizar ~/Descargas --por fecha            # AAAA-MM
-python main.py organizar ~/Descargas --por tamano           # rangos
-python main.py organizar ~/Descargas -s                     # incluye subcarpetas
-python main.py organizar ~/Descargas --dry-run              # simulación
+file-manager organizar ~/Descargas                        # por extensión
+file-manager organizar ~/Descargas --por fecha            # AAAA-MM
+file-manager organizar ~/Descargas --por tamano           # rangos
+file-manager organizar ~/Descargas -s                     # incluye subcarpetas
+file-manager organizar ~/Descargas --dry-run              # simulación
 ```
 
 Categorías por extensión: `Imagenes`, `Videos`, `Audio`, `Documentos`,
@@ -110,30 +132,30 @@ Categorías por extensión: `Imagenes`, `Videos`, `Audio`, `Documentos`,
 #### renombrar
 
 ```bash
-python main.py renombrar viejo.pdf nuevo.pdf            # individual
-python main.py renombrar *.jpg --prefijo "vacaciones_"
-python main.py renombrar *.jpg --sufijo "_editado"
-python main.py renombrar *.pdf --buscar "borrador" --reemplazar "final"
-python main.py renombrar *.txt --buscar '^(\d+)' --reemplazar 'doc_\1' --regex
-python main.py renombrar *.jpg --numerar --plantilla "playa_{i:02d}"
+file-manager renombrar viejo.pdf nuevo.pdf            # individual
+file-manager renombrar *.jpg --prefijo "vacaciones_"
+file-manager renombrar *.jpg --sufijo "_editado"
+file-manager renombrar *.pdf --buscar "borrador" --reemplazar "final"
+file-manager renombrar *.txt --buscar '^(\d+)' --reemplazar 'doc_\1' --regex
+file-manager renombrar *.jpg --numerar --plantilla "playa_{i:02d}"
 ```
 
 #### buscar
 
 ```bash
-python main.py buscar "informe"                 # texto en el nombre
-python main.py buscar "*.iso"                   # comodines
-python main.py buscar -e pdf -d ~/Documentos    # por extensión
-python main.py buscar -t ">=100MB"              # o "<=1GB", "1MB-500MB"
-python main.py buscar -m "ultimo-7dias"         # o ">2024-01-01", "<2024-12-31"
-python main.py buscar "temp" --tipo carpeta
+file-manager buscar "informe"                 # texto en el nombre
+file-manager buscar "*.iso"                   # comodines
+file-manager buscar -e pdf -d ~/Documentos    # por extensión
+file-manager buscar -t ">=100MB"              # o "<=1GB", "1MB-500MB"
+file-manager buscar -m "ultimo-7dias"         # o ">2024-01-01", "<2024-12-31"
+file-manager buscar "temp" --tipo carpeta
 ```
 
 #### info y crear
 
 ```bash
-python main.py info archivo.pdf ~/Descargas     # archivos y carpetas
-python main.py crear ~/Proyectos/2026/informe   # equivalentes a mkdir -p
+file-manager info archivo.pdf ~/Descargas     # archivos y carpetas
+file-manager crear ~/Proyectos/2026/informe   # equivalentes a mkdir -p
 ```
 
 #### acciones (personalizadas)
@@ -142,11 +164,11 @@ Incluye `acciones.json` con 7 acciones de ejemplo. Cada acción es una
 lista de pasos que reutilizan las operaciones del gestor:
 
 ```bash
-python main.py acciones                          # listar acciones
-python main.py acciones ordenar-descargas        # ejecutar una
-python main.py acciones limpiar-temporales --dry-run
-python main.py acciones --crear                  # generar plantilla nueva
-python main.py acciones mi-accion -a otro.json   # catálogo alternativo
+file-manager acciones                          # listar acciones
+file-manager acciones ordenar-descargas        # ejecutar una
+file-manager acciones limpiar-temporales --dry-run
+file-manager acciones --crear                  # generar plantilla nueva
+file-manager acciones mi-accion -a otro.json   # catálogo alternativo
 ```
 
 Acciones incluidas por defecto:
@@ -232,8 +254,8 @@ Antes de mover o renombrar se pide confirmación (salvo `-y`/`--dry-run`).
 | `--sin-ia`           | Desactiva la IA y usa siempre el modo sin red.          |
 
 ```bash
-python main.py organizar ~/Descargas --dry-run
-python main.py borrar ~/temp/* --permanente -y \
+file-manager organizar ~/Descargas --dry-run
+file-manager borrar ~/temp/* --permanente -y \
     --restringido --permitido ~/temp
 ```
 

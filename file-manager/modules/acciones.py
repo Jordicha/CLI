@@ -4,9 +4,9 @@ Permite al usuario definir sus propias operaciones compuestas
 (reuniones, limpieza de temporales, respaldos, reportes...) en un
 archivo JSON y ejecutarlas desde la CLI:
 
-    python main.py acciones                 # listado
-    python main.py acciones --crear         # plantilla de ejemplo
-    python main.py acciones limpiar-temporales --dry-run
+    file-manager acciones                 # listado
+    file-manager acciones --crear         # plantilla de ejemplo
+    file-manager acciones limpiar-temporales --dry-run
 
 Formato del archivo (``acciones.json`` en la raíz del proyecto):
 

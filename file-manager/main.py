@@ -3,14 +3,14 @@
 
 Uso directo desde la terminal (argparse) o con menú interactivo:
 
-    python main.py organizar ~/Descargas
-    python main.py mover archivo.pdf ~/Documentos/
-    python main.py borrar archivo.pdf --papelera ~/papelera
-    python main.py buscar "factura" --extension pdf
-    python main.py info archivo.pdf
-    python main.py renombrar archivo.pdf nuevo_nombre.pdf
-    python main.py organizar ~/Descargas --dry-run
-    python main.py            # abre el menú interactivo
+    file-manager organizar ~/Descargas
+    file-manager mover archivo.pdf ~/Documentos/
+    file-manager borrar archivo.pdf --papelera ~/papelera
+    file-manager buscar "factura" --extension pdf
+    file-manager info archivo.pdf
+    file-manager renombrar archivo.pdf nuevo_nombre.pdf
+    file-manager organizar ~/Descargas --dry-run
+    file-manager            # abre el menú interactivo
 """
 
 from __future__ import annotations
