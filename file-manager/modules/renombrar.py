@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, Sequence
 
 from modules._resultado import Resultado
+from utils.errores import EntradaNoValida
 from utils.interfaz import Interfaz
 from utils.logger import Logger
 from utils.seguridad import Seguridad
@@ -36,7 +37,7 @@ class Renombrar:
             ruta = self.seguridad.validar_existente(origen, "el archivo")
             self.seguridad.comprobar_permitido(ruta)
             if not nuevo_nombre or nuevo_nombre in (os.curdir, os.pardir):
-                raise ValueError(f"Nombre de archivo no válido: {nuevo_nombre!r}")
+                raise EntradaNoValida(f"Nombre de archivo no válido: {nuevo_nombre!r}")
             destino = ruta.parent / nuevo_nombre
             if destino != ruta and destino.exists():
                 if destino.is_dir():

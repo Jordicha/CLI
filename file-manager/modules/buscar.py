@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterator, List, Optional, Tuple
 
+from utils.errores import EntradaNoValida
 from utils.interfaz import Interfaz
 from utils.logger import Logger
 from utils.seguridad import Seguridad
@@ -25,13 +26,16 @@ def parsear_tamano(texto: str) -> int:
     """Convierte '10MB', '1.5 gb', '500' a bytes.
 
     Raises:
-        ValueError: si el formato no es válido.
+        EntradaNoValida: si el formato no es válido.
     """
     t = texto.strip().lower().replace(" ", "")
     m = re.fullmatch(r"([\d.]+)([kmgt]?b)?", t)
     if not m:
-        raise ValueError(f"Tamaño no válido: {texto!r} (usa p. ej. 10MB, 1.5GB)")
-    valor = float(m.group(1))
+        raise EntradaNoValida(f"Tamaño no válido: {texto!r} (usa p. ej. 10MB, 1.5GB)")
+    try:
+        valor = float(m.group(1))
+    except ValueError as exc:
+        raise EntradaNoValida(f"Tamaño no válido: {texto!r}") from exc
     unidad = (m.group(2) or "b").lower()
     return int(valor * _UNIDADES[unidad])
 
@@ -40,14 +44,14 @@ def parsear_fecha(texto: str) -> datetime:
     """Convierte 'YYYY-MM-DD' en datetime a medianoche.
 
     Raises:
-        ValueError: si el formato no es válido.
+        EntradaNoValida: si el formato no es válido.
     """
     for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y"):
         try:
             return datetime.strptime(texto.strip(), fmt)
         except ValueError:
             continue
-    raise ValueError(f"Fecha no válida: {texto!r} (usa AAAA-MM-DD)")
+    raise EntradaNoValida(f"Fecha no válida: {texto!r} (usa AAAA-MM-DD)")
 
 
 class Buscar:
@@ -160,7 +164,7 @@ class Buscar:
             t,
         )
         if not m:
-            raise ValueError(
+            raise EntradaNoValida(
                 f"Criterio de tamaño no válido: {tamano!r}. "
                 "Ejemplos: >=10MB, <=1GB, 1MB-500MB"
             )

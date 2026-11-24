@@ -13,6 +13,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from utils.errores import IAError
 from utils.logger import Logger
 
 log = Logger.obtener("ia")
@@ -21,10 +22,6 @@ ARCHIVO_ENV = ".env"
 MODELO_POR_DEFECTO = "gpt-4o-mini"
 URL_CHAT = "https://api.openai.com/v1/chat/completions"
 TIMEOUT_POR_DEFECTO = 8.0
-
-
-class IAError(Exception):
-    """Error de configuración o comunicación con el proveedor de IA."""
 
 
 def cargar_env(ruta: Optional[Path] = None) -> None:

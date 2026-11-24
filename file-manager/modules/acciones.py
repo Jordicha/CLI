@@ -56,6 +56,7 @@ from modules.informacion import Informacion
 from modules.mover import Mover
 from modules.organizar import CATEGORIAS, CATEGORIA_OTROS, Organizar
 from modules.renombrar import Renombrar
+from utils.errores import AccionNoValida, ConfigError
 from utils.ia import IA, IAError
 from utils.interfaz import Interfaz
 from utils.logger import Logger
@@ -194,7 +195,7 @@ class Acciones:
             Diccionario ``nombre -> definicion``.
 
         Raises:
-            ValueError: si el JSON es inválido o no respeta el formato.
+            ConfigError: si el JSON es inválido o no respeta el formato.
         """
         ruta = self.ruta_catalogo
         if not ruta.exists():
@@ -207,42 +208,47 @@ class Acciones:
         try:
             datos = json.loads(ruta.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
-            raise ValueError(f"acciones.json no es un JSON válido: {exc}") from exc
+            raise ConfigError(f"acciones.json no es un JSON válido: {exc}") from exc
         if not isinstance(datos, dict):
-            raise ValueError("acciones.json debe ser un objeto { nombre: accion }.")
+            raise ConfigError("acciones.json debe ser un objeto { nombre: accion }.")
         for nombre, accion in datos.items():
             if not isinstance(nombre, str) or not nombre.strip():
-                raise ValueError("Los nombres de accion deben ser textos no vacios.")
+                raise ConfigError("Los nombres de accion deben ser textos no vacios.")
             if not isinstance(accion, dict) or "pasos" not in accion:
-                raise ValueError(
+                raise ConfigError(
                     f"La accion '{nombre}' debe tener la forma "
                     f'{{"descripcion": "...", "pasos": [...]}}.'
                 )
             if not isinstance(accion["pasos"], list) or not accion["pasos"]:
-                raise ValueError(
+                raise ConfigError(
                     f"Accion '{nombre}', campo 'pasos': debe ser una lista no vacia."
                 )
             if not isinstance(accion.get("descripcion", ""), str):
-                raise ValueError(
+                raise ConfigError(
                     f"Accion '{nombre}', campo 'descripcion': debe ser texto."
                 )
             for i, paso in enumerate(accion["pasos"], start=1):
                 self._validar_paso(nombre, i, paso)
+        assert all(
+            isinstance(accion, dict) and isinstance(accion["pasos"], list)
+            for accion in datos.values()
+        )
         return datos
 
     def _validar_paso(self, nombre: str, i: int, paso: Any) -> None:
         """Valida un paso antes de ejecutar nada e informa del campo que falla."""
         if not isinstance(paso, dict) or len(paso) != 1:
-            raise ValueError(
+            raise AccionNoValida(
                 f"Accion '{nombre}', paso {i}: cada paso debe ser un objeto "
                 f"con UNA operacion ({', '.join(OPERACIONES)})."
             )
         operacion, argumentos = next(iter(paso.items()))
         if operacion not in OPERACIONES:
-            raise ValueError(
+            raise AccionNoValida(
                 f"Accion '{nombre}', paso {i}: operacion desconocida "
                 f"'{operacion}'. Validas: {', '.join(OPERACIONES)}."
             )
+        assert operacion in OPERACIONES
         if operacion == "ejecutar":
             args: Dict[str, Any] = {"orden": argumentos}
         elif isinstance(argumentos, dict):
@@ -251,7 +257,7 @@ class Acciones:
             args = {"valor": argumentos}
 
         def fallar(campo: str, detalle: str) -> None:
-            raise ValueError(
+            raise AccionNoValida(
                 f"Accion '{nombre}', paso {i} ({operacion}): "
                 f"campo '{campo}' {detalle}."
             )
@@ -438,7 +444,7 @@ class Acciones:
         """Muestra las acciones definidas y devuelve código de salida."""
         try:
             datos = self.cargar()
-        except ValueError as exc:
+        except ConfigError as exc:
             self.interfaz.error(str(exc))
             return 2
         if not datos:
@@ -473,7 +479,7 @@ class Acciones:
         resultado = Resultado()
         try:
             datos = self.cargar()
-        except ValueError as exc:
+        except ConfigError as exc:
             self.interfaz.error(str(exc))
             resultado.errores += 1
             return resultado
@@ -496,7 +502,7 @@ class Acciones:
         for i, paso in enumerate(accion["pasos"], start=1):
             try:
                 operacion, argumentos = self._interpretar(paso)
-            except ValueError as exc:
+            except AccionNoValida as exc:
                 self.interfaz.error(f"Paso {i}: {exc}")
                 resultado.errores += 1
                 continue
@@ -542,16 +548,17 @@ class Acciones:
     def _interpretar(paso: Any) -> Tuple[str, Dict[str, Any]]:
         """Valida un paso y devuelve ``(operacion, argumentos)``."""
         if not isinstance(paso, dict) or len(paso) != 1:
-            raise ValueError(
+            raise AccionNoValida(
                 "Cada paso debe ser un objeto con UNA operacion: "
                 + ", ".join(OPERACIONES)
             )
         operacion, argumentos = next(iter(paso.items()))
         if operacion not in OPERACIONES:
-            raise ValueError(
+            raise AccionNoValida(
                 f"Operacion desconocida '{operacion}'. "
                 f"Validas: {', '.join(OPERACIONES)}"
             )
+        assert operacion in OPERACIONES
         if operacion == "ejecutar":
             argumentos = {"orden": argumentos}
         if not isinstance(argumentos, dict):
@@ -1026,7 +1033,7 @@ class Acciones:
         self.interfaz.encabezado("ACCIONES PERSONALIZADAS")
         try:
             datos = self.cargar()
-        except ValueError as exc:
+        except ConfigError as exc:
             self.interfaz.error(str(exc))
             return
         nombres = list(datos)

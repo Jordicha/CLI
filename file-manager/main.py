@@ -16,6 +16,9 @@ Uso directo desde la terminal (argparse) o con menú interactivo:
 from __future__ import annotations
 
 import argparse
+import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,11 +34,19 @@ from modules import (  # noqa: E402
     Organizar,
     Renombrar,
 )
+from utils.errores import GestorArchivosError  # noqa: E402
 from utils.interfaz import Interfaz  # noqa: E402
 from utils.logger import Logger  # noqa: E402
 from utils.seguridad import Seguridad  # noqa: E402
 
 log = Logger.obtener("main")
+ERRORES_PREVISIBLES = (
+    ValueError,
+    OSError,
+    shutil.Error,
+    subprocess.SubprocessError,
+    re.error,
+)
 
 
 # ---------------------------------------------------------------------- #
@@ -348,6 +359,10 @@ def menu_interactivo(seguridad: Seguridad) -> None:
             acciones[opcion]()
         except (EOFError, KeyboardInterrupt):
             Interfaz.aviso("Operacion interrumpida.")
+        except GestorArchivosError as exc:
+            Interfaz.error(str(exc))
+        except ERRORES_PREVISIBLES as exc:
+            Interfaz.error(str(exc))
         except Exception as exc:  # noqa: BLE001 - el menú no debe caerse
             Interfaz.error(f"Error inesperado: {exc}")
             log.exception("Error en el menu (opcion %s)", opcion)
@@ -374,10 +389,10 @@ def main(argv: list[str] | None = None) -> int:
     handler = HANDLERS[args.comando]
     try:
         return handler(args, seguridad)
-    except FileNotFoundError as exc:
+    except GestorArchivosError as exc:
         Interfaz.error(str(exc))
         return 2
-    except PermissionError as exc:
+    except ERRORES_PREVISIBLES as exc:
         Interfaz.error(str(exc))
         return 2
     except KeyboardInterrupt:

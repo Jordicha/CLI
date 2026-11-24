@@ -16,6 +16,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Sequence
 
+from utils.errores import (
+    AccesoDenegado,
+    ConfigError,
+    DirectorioNoValido,
+    RutaNoValida,
+)
+
 
 class Seguridad:
     """Agrupa las comprobaciones de seguridad usadas por todos los módulos."""
@@ -49,6 +56,7 @@ class Seguridad:
         ]
         self._confirmador = confirmador
         self.papelera_dir = Path(papelera_dir).expanduser() if papelera_dir else None
+        assert isinstance(self.rutas_permitidas, list)
 
     # ------------------------------------------------------------------ #
     # Confirmaciones
@@ -60,6 +68,7 @@ class Seguridad:
         Con ``--yes`` (``forzar=True``) se asiente sin preguntar.
         Si no hay función confirmadora disponible, se deniega por seguridad.
         """
+        assert self._confirmador is None or callable(self._confirmador)
         if self.dry_run or forzar:
             return True
         if self._confirmador is None:
@@ -78,11 +87,11 @@ class Seguridad:
                 (p. ej. ``"el origen"``, ``"la papelera"``).
 
         Raises:
-            FileNotFoundError: si la ruta no existe.
+            RutaNoValida: si la ruta no existe.
         """
         p = Path(ruta).expanduser()
         if not p.exists():
-            raise FileNotFoundError(f"No existe {descripcion}: {p}")
+            raise RutaNoValida(f"No existe {descripcion}: {p}")
         return p
 
     def validar_destino(self, destino: Path | str, crear: bool = False) -> Path:
@@ -94,17 +103,17 @@ class Seguridad:
                 se informa pero no se crea realmente).
 
         Raises:
-            FileNotFoundError: si no existe y ``crear`` es False.
-            NotADirectoryError: si existe pero no es un directorio.
-            PermissionError: si está fuera de los directorios permitidos.
+            RutaNoValida: si no existe y ``crear`` es False.
+            DirectorioNoValido: si existe pero no es un directorio.
+            AccesoDenegado: si está fuera de los directorios permitidos.
         """
         p = Path(destino).expanduser()
         if p.exists():
             if not p.is_dir():
-                raise NotADirectoryError(f"El destino no es un directorio: {p}")
+                raise DirectorioNoValido(f"El destino no es un directorio: {p}")
         else:
             if not crear:
-                raise FileNotFoundError(
+                raise RutaNoValida(
                     f"El directorio de destino no existe: {p}\n"
                     f"Crea la carpeta antes de continuar o usa la opción de crearla."
                 )
@@ -118,7 +127,7 @@ class Seguridad:
         """Comprueba que la ruta está dentro de los directorios permitidos.
 
         Raises:
-            PermissionError: si el modo restringido está activo y la ruta
+            AccesoDenegado: si el modo restringido está activo y la ruta
                 queda fuera de los directorios autorizados.
         """
         if not self.restringido or not self.rutas_permitidas:
@@ -130,7 +139,7 @@ class Seguridad:
                 return
             except ValueError:
                 continue
-        raise PermissionError(
+        raise AccesoDenegado(
             f"Operación bloqueada por el modo restringido: {p}\n"
             f"Directorios permitidos: "
             f"{', '.join(str(r) for r in self.rutas_permitidas)}"
@@ -181,10 +190,10 @@ class Seguridad:
             La ruta dentro de la papelera.
 
         Raises:
-            RuntimeError: si no se ha configurado directorio de papelera.
+            ConfigError: si no se ha configurado directorio de papelera.
         """
         if self.papelera_dir is None:
-            raise RuntimeError(
+            raise ConfigError(
                 "No hay papelera configurada. Usa --papelera RUTA para "
                 "definirla."
             )

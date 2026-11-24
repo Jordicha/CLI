@@ -237,6 +237,18 @@ python main.py borrar ~/temp/* --permanente -y \
     --restringido --permitido ~/temp
 ```
 
+### Robustez ante errores
+
+Las entradas previsibles (rutas inexistentes, JSON roto, fechas o tamaños mal
+formados, destinos que no son directorios, modo restringido, falta de papelera
+o fallos de IA) se convierten en excepciones propias de `utils/errores.py`:
+`ConfigError`, `AccionNoValida`, `RutaNoValida`, `DirectorioNoValido`,
+`AccesoDenegado`, `EntradaNoValida` e `IAError`. La CLI las muestra con
+mensajes humanos y devuelve un código de salida distinto de 0, sin traceback.
+Los catálogos se validan por completo antes de ejecutar, de modo que un paso
+inválido no deja efectos parciales. Las invariantes internas usan `assert`
+durante el desarrollo.
+
 ## Seguridad
 
 - Nunca se borra sin **confirmación explícita** (salvo `--yes` + borrado
@@ -264,6 +276,7 @@ file-manager/
 │   ├── acciones.py       # Acciones personalizadas desde JSON
 │   └── _resultado.py     # Contador éxito/omitidos/errores
 ├── utils/
+│   ├── errores.py        # Excepciones propias con mensajes humanos
 │   ├── seguridad.py      # Confirmaciones, rutas, papelera, dry-run
 │   ├── logger.py         # Logging a logs/file-manager.log
 │   ├── interfaz.py       # Colores, tablas y menús (rich)
