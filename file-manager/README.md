@@ -41,7 +41,7 @@ carpetas, tanto desde un **menú interactivo** con colores como mediante
 
 ## Instalación
 
-Requisitos: Python 3.9 o superior.
+Requisitos: Python 3.10 o superior.
 
 ```bash
 cd file-manager
@@ -256,6 +256,28 @@ La configuración se concentra en `utils/config.py`: `Config.desde_args()` y
 comparten un único objeto de configuración en lugar de leer el entorno cada
 uno por su cuenta.
 
+### Pruebas automáticas
+
+```bash
+cd file-manager
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest -q
+```
+
+`tests/conftest.py` aísla cada prueba en `tmp_path`: cambia el directorio de
+trabajo, define un `HOME` temporal y deja `OPENAI_API_KEY` vacía. Ninguna
+prueba toca archivos reales ni llama a la API. `.github/workflows/tests.yml`
+ejecuta la misma suite con Python 3.12 en cada `push` y `pull request`.
+
+| Prueba | Aserción clave | Qué demuestra |
+| ------ | -------------- | ------------- |
+| `test_mover_archivo_existente...` | código `0`, contenido intacto en el destino, origen borrado, mensaje `Archivo movido` | Camino feliz: la operación se hace y se informa. |
+| `test_catalogo_json_roto...` | código `2`, mensaje `JSON válido`, sin `Traceback` | Un JSON inválido se convierte en error humano. |
+| `test_mover_origen_inexistente...` | código `1`, mensaje `No existe el origen`, destino vacío, sin `Traceback` | Una ruta mala no crea efectos parciales. |
+| `test_modo_restringido...` | código `1`, mensaje `bloqueada por el modo restringido`, origen intacto, destino sin copia, sin `Traceback` | La política de seguridad se aplica antes de mover. |
+
 ## Seguridad
 
 - Nunca se borra sin **confirmación explícita** (salvo `--yes` + borrado
@@ -292,8 +314,12 @@ file-manager/
 │   ├── interfaz.py       # Colores, tablas y menús (rich)
 │   └── ia.py             # Cliente OpenAI opcional con fallback sin red
 ├── acciones.json         # Acciones personalizadas del usuario
+├── tests/
+│   ├── conftest.py       # Aislamiento en tmp_path y captura de salida
+│   └── test_cli.py       # Camino feliz y 3 casos feos
 ├── logs/
 ├── requirements.txt
+├── requirements-dev.txt  # pytest
 └── README.md
 ```
 
