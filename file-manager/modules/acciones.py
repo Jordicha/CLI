@@ -27,6 +27,10 @@ Formato del archivo (``acciones.json`` en la raíz del proyecto):
       }
     }
 
+El catálogo se valida por completo antes de ejecutar cualquier paso: si
+falta un campo o tiene un tipo incorrecto se indica la acción, el paso y
+el campo, y no se produce ningún efecto parcial.
+
 Todos los pasos pasan por las mismas comprobaciones de seguridad
 (dry-run, modo restringido y confirmaciones) que las operaciones sueltas.
 """
@@ -65,6 +69,10 @@ OPERACIONES = (
     "tamano",
     "ejecutar",
 )
+
+CRITERIOS_ORGANIZAR = ("extension", "fecha", "creacion", "modificacion", "tamano")
+TIPOS_BUSQUEDA = ("archivo", "carpeta", "todo")
+MODOS_RENOMBRAR = ("nuevo", "prefijo", "sufijo", "buscar", "numerar")
 
 PLANTILLA: Dict[str, Any] = {
     "preparar-informes": {
@@ -183,14 +191,162 @@ class Acciones:
         if not isinstance(datos, dict):
             raise ValueError("acciones.json debe ser un objeto { nombre: accion }.")
         for nombre, accion in datos.items():
-            if not isinstance(accion, dict) or not isinstance(
-                accion.get("pasos"), list
-            ):
+            if not isinstance(nombre, str) or not nombre.strip():
+                raise ValueError("Los nombres de accion deben ser textos no vacios.")
+            if not isinstance(accion, dict) or "pasos" not in accion:
                 raise ValueError(
                     f"La accion '{nombre}' debe tener la forma "
                     f'{{"descripcion": "...", "pasos": [...]}}.'
                 )
+            if not isinstance(accion["pasos"], list) or not accion["pasos"]:
+                raise ValueError(
+                    f"Accion '{nombre}', campo 'pasos': debe ser una lista no vacia."
+                )
+            if not isinstance(accion.get("descripcion", ""), str):
+                raise ValueError(
+                    f"Accion '{nombre}', campo 'descripcion': debe ser texto."
+                )
+            for i, paso in enumerate(accion["pasos"], start=1):
+                self._validar_paso(nombre, i, paso)
         return datos
+
+    def _validar_paso(self, nombre: str, i: int, paso: Any) -> None:
+        """Valida un paso antes de ejecutar nada e informa del campo que falla."""
+        if not isinstance(paso, dict) or len(paso) != 1:
+            raise ValueError(
+                f"Accion '{nombre}', paso {i}: cada paso debe ser un objeto "
+                f"con UNA operacion ({', '.join(OPERACIONES)})."
+            )
+        operacion, argumentos = next(iter(paso.items()))
+        if operacion not in OPERACIONES:
+            raise ValueError(
+                f"Accion '{nombre}', paso {i}: operacion desconocida "
+                f"'{operacion}'. Validas: {', '.join(OPERACIONES)}."
+            )
+        if operacion == "ejecutar":
+            args: Dict[str, Any] = {"orden": argumentos}
+        elif isinstance(argumentos, dict):
+            args = argumentos
+        else:
+            args = {"valor": argumentos}
+
+        def fallar(campo: str, detalle: str) -> None:
+            raise ValueError(
+                f"Accion '{nombre}', paso {i} ({operacion}): "
+                f"campo '{campo}' {detalle}."
+            )
+
+        def texto(
+            campo: str, obligatorio: bool = True, alias: Optional[str] = None
+        ) -> None:
+            valor = args.get(campo)
+            if valor is None and alias:
+                valor = args.get(alias)
+            if valor is None:
+                if obligatorio:
+                    fallar(campo, "es obligatorio")
+                return
+            if not isinstance(valor, str) or (obligatorio and not valor.strip()):
+                fallar(
+                    campo,
+                    "debe ser texto no vacio" if obligatorio else "debe ser texto",
+                )
+
+        def lista(campo: str, alias: Optional[str] = None) -> None:
+            valor = args.get(campo)
+            if valor is None and alias:
+                valor = args.get(alias)
+            if valor is None:
+                fallar(campo, "es obligatorio")
+            if isinstance(valor, str):
+                if not valor.strip():
+                    fallar(campo, "no puede estar vacio")
+                return
+            if (
+                not isinstance(valor, list)
+                or not valor
+                or not all(isinstance(v, str) and v.strip() for v in valor)
+            ):
+                fallar(campo, "debe ser una lista no vacia de textos")
+
+        def booleano(campo: str) -> None:
+            if campo in args and not isinstance(args[campo], bool):
+                fallar(campo, "debe ser verdadero o falso")
+
+        def numero(campo: str, minimo: float = 0) -> None:
+            valor = args.get(campo)
+            if valor is None:
+                return
+            if isinstance(valor, bool) or not isinstance(valor, (int, float)):
+                fallar(campo, "debe ser un numero")
+            if valor < minimo:
+                fallar(campo, f"debe ser >= {minimo}")
+
+        if operacion == "crear":
+            lista("rutas", alias="valor")
+
+        elif operacion in ("mover", "copiar"):
+            lista("origenes")
+            texto("destino")
+            booleano("crear_destino")
+            booleano("no_sobrescribir")
+
+        elif operacion == "organizar":
+            texto("directorio", alias="valor")
+            criterio = args.get("por")
+            if criterio is not None and criterio not in CRITERIOS_ORGANIZAR:
+                fallar(
+                    "por",
+                    f"debe ser uno de {', '.join(CRITERIOS_ORGANIZAR)}",
+                )
+            booleano("subcarpetas")
+
+        elif operacion == "renombrar":
+            lista("rutas", alias="valor")
+            modos = [
+                modo for modo in MODOS_RENOMBRAR if args.get(modo) not in (None, False)
+            ]
+            if not modos:
+                fallar(
+                    "nuevo/prefijo/sufijo/buscar/numerar", "se requiere al menos uno"
+                )
+            if "nuevo" in modos:
+                texto("nuevo")
+            for campo in ("prefijo", "sufijo", "buscar", "reemplazar", "plantilla"):
+                if campo in args and not isinstance(args[campo], str):
+                    fallar(campo, "debe ser texto")
+            for campo in ("numerar", "regex"):
+                booleano(campo)
+
+        elif operacion == "buscar":
+            for campo in ("patron", "extension", "tamano", "modificado", "directorio"):
+                texto(campo, obligatorio=False)
+            tipo = args.get("tipo")
+            if tipo is not None and tipo not in TIPOS_BUSQUEDA:
+                fallar("tipo", f"debe ser uno de {', '.join(TIPOS_BUSQUEDA)}")
+            maximo = args.get("max")
+            if maximo is not None and (
+                isinstance(maximo, bool) or not isinstance(maximo, int) or maximo < 1
+            ):
+                fallar("max", "debe ser un entero positivo")
+            if args.get("tamano"):
+                try:
+                    Buscar._rango_tamano(args["tamano"])
+                except ValueError as exc:
+                    fallar("tamano", str(exc))
+            if args.get("modificado"):
+                try:
+                    Buscar._rango_fecha(args["modificado"])
+                except (ValueError, AttributeError, TypeError) as exc:
+                    fallar("modificado", str(exc))
+
+        elif operacion == "tamano":
+            texto("directorio", obligatorio=False)
+            numero("alerta_mb")
+
+        elif operacion == "ejecutar":
+            texto("orden")
+            numero("timeout", minimo=1)
 
     def plantilla(self, forzar: bool = False) -> Resultado:
         """Crea el archivo de acciones con una plantilla de ejemplo.

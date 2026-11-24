@@ -189,6 +189,13 @@ acciones respetan `--dry-run`, `--restringido` y las confirmaciones; en
 una simulación encadenada, los pasos que dependen de carpetas o archivos
 creados por pasos anteriores se marcan como simulados en lugar de fallar.
 
+El catálogo se valida por completo antes de ejecutar cualquier paso: si un
+campo falta o tiene un tipo incorrecto, el error indica la acción, el paso y
+el campo (p. ej. `Accion 'respaldo', paso 2 (mover): campo 'origenes' es obligatorio.`)
+y no se toca ningún fichero. Añadir una acción nueva solo requiere editar el
+JSON; la decisión de usar configuración externa se explica en el
+[ADR 0001](../docs/adr/0001-configuracion-externa.md).
+
 ### Opciones globales de seguridad
 
 | Opción               | Descripción                                             |
