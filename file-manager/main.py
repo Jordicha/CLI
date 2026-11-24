@@ -5,7 +5,7 @@ Uso directo desde la terminal (argparse) o con menú interactivo:
 
     python main.py organizar ~/Descargas
     python main.py mover archivo.pdf ~/Documentos/
-    python main.py borrar archivo.pdf --papelera
+    python main.py borrar archivo.pdf --papelera ~/papelera
     python main.py buscar "factura" --extension pdf
     python main.py info archivo.pdf
     python main.py renombrar archivo.pdf nuevo_nombre.pdf

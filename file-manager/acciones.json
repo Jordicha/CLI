@@ -55,5 +55,27 @@
         }
       }
     ]
+  },
+  "respaldar-csv": {
+    "descripcion": "Crea backup/datos, copia los CSV de la carpeta actual sin sobrescribir y mide el resultado.",
+    "pasos": [
+      {
+        "crear": ["backup", "backup/datos"]
+      },
+      {
+        "copiar": {
+          "origenes": ["*.csv"],
+          "destino": "backup/datos",
+          "crear_destino": true,
+          "no_sobrescribir": true
+        }
+      },
+      {
+        "tamano": {
+          "directorio": "backup",
+          "alerta_mb": 100
+        }
+      }
+    ]
   }
 }

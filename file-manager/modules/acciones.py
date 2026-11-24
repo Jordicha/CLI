@@ -344,6 +344,10 @@ class Acciones:
             ampliadas.append(r)
         return ampliadas
 
+    def _destino_simulado(self, destino: str) -> bool:
+        """Indica si un destino no existe aún porque un paso previo se simuló."""
+        return self.seguridad.dry_run and not Path(destino).expanduser().exists()
+
     @staticmethod
     def _interpretar(paso: Any) -> Tuple[str, Dict[str, Any]]:
         """Valida un paso y devuelve ``(operacion, argumentos)``."""
@@ -387,7 +391,10 @@ class Acciones:
             return Mover(seg).mover(
                 origenes,
                 destino,
-                crear_destino=bool(args.get("crear_destino", False)),
+                crear_destino=(
+                    bool(args.get("crear_destino", False))
+                    or self._destino_simulado(destino)
+                ),
                 no_sobrescribir=bool(args.get("no_sobrescribir", True)),
                 forzar=forzar,
             )
@@ -399,6 +406,12 @@ class Acciones:
             directorio = args.get("directorio") or args.get("valor")
             if not directorio:
                 self.interfaz.error("organizar necesita 'directorio'.")
+                return vacio
+            if self._destino_simulado(directorio):
+                self.interfaz.simulacion(
+                    f"Organizar (directorio simulado): {directorio}"
+                )
+                vacio.ok()
                 return vacio
             return Organizar(seg).organizar(
                 directorio,
@@ -460,15 +473,22 @@ class Acciones:
             self.interfaz.error("copiar necesita 'origenes' y 'destino'.")
             return resultado
         try:
-            destino_dir = self.seguridad.validar_destino(
-                destino, crear=bool(args.get("crear_destino", False))
-            )
+            if self._destino_simulado(destino):
+                destino_dir = Path(destino).expanduser()
+            else:
+                destino_dir = self.seguridad.validar_destino(
+                    destino, crear=bool(args.get("crear_destino", False))
+                )
         except (FileNotFoundError, NotADirectoryError, PermissionError) as exc:
             self.interfaz.error(str(exc))
             resultado.errores += 1
             return resultado
         no_over = bool(args.get("no_sobrescribir", True))
         for r in Seguridad.expandir_rutas(origenes):
+            if any(c in str(r) for c in "*?[") and not Path(r).exists():
+                self.interfaz.aviso(f"Sin coincidencias: {r}")
+                resultado.omitidos += 1
+                continue
             try:
                 origen = self.seguridad.validar_existente(r, "el origen")
                 self.seguridad.comprobar_permitido(origen)
@@ -479,6 +499,9 @@ class Acciones:
                     elif not self.seguridad.se_puede_sobrescribir(
                         final, forzar=forzar
                     ):
+                        self.interfaz.aviso(
+                            f"Omitido (sin confirmacion): {origen} -> {final}"
+                        )
                         resultado.omitidos += 1
                         continue
                 if self.seguridad.dry_run:
@@ -500,14 +523,55 @@ class Acciones:
         return resultado
 
     def _renombrar(self, args: Dict[str, Any], forzar: bool) -> Resultado:
-        """Renombra vía nuevo/prefijo/sufijo/patron/numerar."""
-        r = Renombrar(self.seguridad)
-        rutas = [str(x) for x in (args.get("rutas") or [])]
+        """Renombra vía nuevo/prefijo/sufijo/patron/numerar (admite comodines)."""
+        valor = args.get("rutas") or args.get("valor") or []
+        if isinstance(valor, str):
+            valor = [valor]
+        rutas = self._expandir(str(x) for x in valor)
+        simuladas = 0
+        if self.seguridad.dry_run:
+            reales: List[str] = []
+            for ruta in rutas:
+                if Path(ruta).expanduser().exists():
+                    reales.append(ruta)
+                else:
+                    self.interfaz.simulacion(
+                        f"Renombrar (entrada simulada): {ruta}"
+                    )
+                    simuladas += 1
+            rutas = reales
         if not rutas:
-            self.interfaz.error("renombrar necesita 'rutas'.")
+            if not simuladas:
+                self.interfaz.error("renombrar necesita 'rutas'.")
+                res = Resultado()
+                res.errores += 1
+                return res
+            modos = (
+                args.get("nuevo"),
+                args.get("prefijo"),
+                args.get("sufijo"),
+                args.get("buscar"),
+                args.get("numerar"),
+            )
+            if not any(modo not in (None, False, "") for modo in modos):
+                self.interfaz.error(
+                    "renombrar necesita: nuevo, prefijo, sufijo, buscar o numerar."
+                )
+                res = Resultado()
+                res.errores += 1
+                return res
             res = Resultado()
-            res.errores += 1
+            res.exito = simuladas
             return res
+        res = self._renombrar_dispatch(args, forzar, rutas)
+        res.exito += simuladas
+        return res
+
+    def _renombrar_dispatch(
+        self, args: Dict[str, Any], forzar: bool, rutas: List[str]
+    ) -> Resultado:
+        """Aplica el modo de renombrado indicado sobre rutas ya expandidas."""
+        r = Renombrar(self.seguridad)
         if args.get("nuevo"):
             if len(rutas) != 1:
                 self.interfaz.error("'nuevo' solo sirve con 1 archivo.")
@@ -543,6 +607,12 @@ class Acciones:
         resultado = Resultado()
         ruta = Path(args.get("directorio") or args.get("valor") or ".").expanduser()
         if not ruta.exists():
+            if self.seguridad.dry_run:
+                self.interfaz.simulacion(
+                    f"Medir tamano (directorio simulado): {ruta}"
+                )
+                resultado.ok()
+                return resultado
             self.interfaz.error(f"No existe: {ruta}")
             resultado.errores += 1
             return resultado

@@ -78,6 +78,10 @@ class Mover:
         resultado: Resultado,
     ) -> None:
         try:
+            if any(c in str(origen) for c in "*?[") and not origen.exists():
+                self.interfaz.aviso(f"Sin coincidencias: {origen}")
+                resultado.omitidos += 1
+                return
             origen = self.seguridad.validar_existente(origen, "el origen")
             self.seguridad.comprobar_permitido(origen)
 
@@ -109,6 +113,9 @@ class Mover:
                 self.interfaz.ok(f"{tipo.capitalize()} movido: {origen} -> {destino_final}")
             log.info("MOVIDO %s -> %s", origen, destino_final)
             resultado.ok()
+        except FileNotFoundError as exc:
+            self.interfaz.error(str(exc))
+            resultado.error()
         except PermissionError as exc:
             self.interfaz.error(str(exc))
             resultado.error()

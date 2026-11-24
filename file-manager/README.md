@@ -138,7 +138,7 @@ python main.py crear ~/Proyectos/2026/informe   # equivalentes a mkdir -p
 
 #### acciones (personalizadas)
 
-Incluye `acciones.json` con 4 acciones de ejemplo. Cada acción es una
+Incluye `acciones.json` con 5 acciones de ejemplo. Cada acción es una
 lista de pasos que reutilizan las operaciones del gestor:
 
 ```bash
@@ -157,6 +157,7 @@ Acciones incluidas por defecto:
 | `limpiar-temporales`| Busca `*.tmp` y los envía a la papelera.              |
 | `informes-mensuales`| Crea `informes/datos` y copia los CSV actuales.       |
 | `reporte-tamano`    | Muestra el tamaño total y avisa si supera 500 MB.     |
+| `respaldar-csv`     | Crea `backup/datos`, copia los CSV sin sobrescribir y mide el tamaño. |
 
 Formato del archivo:
 
@@ -183,8 +184,10 @@ Formato del archivo:
 Operaciones disponibles en cada paso: `crear`, `mover`, `copiar`,
 `organizar`, `renombrar`, `buscar`, `tamano` y `ejecutar` (esta última
 pide confirmación explícita salvo con `--yes`). Los comodines (`*.csv`)
-se expanden sobre el directorio actual. Todas las acciones respetan
-`--dry-run`, `--restringido` y las confirmaciones.
+se expanden sobre el directorio actual, también en `renombrar`. Todas las
+acciones respetan `--dry-run`, `--restringido` y las confirmaciones; en
+una simulación encadenada, los pasos que dependen de carpetas o archivos
+creados por pasos anteriores se marcan como simulados en lugar de fallar.
 
 ### Opciones globales de seguridad
 
