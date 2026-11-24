@@ -124,7 +124,10 @@ class CatalogoAcciones:
         aqui = Path.cwd() / ARCHIVO_ACCIONES
         if aqui.exists():
             return aqui
-        return Path(__file__).resolve().parent.parent / ARCHIVO_ACCIONES
+        proyecto = Path(__file__).resolve().parent.parent / ARCHIVO_ACCIONES
+        if proyecto.exists():
+            return proyecto
+        return Path(__file__).resolve().parent / ARCHIVO_ACCIONES
 
     def cargar(self, obligatoria: bool = True) -> Dict[str, Any]:
         """Lee y valida el catálogo; devuelve ``nombre -> definición``."""
@@ -133,7 +136,7 @@ class CatalogoAcciones:
             if obligatoria:
                 self.interfaz.error(
                     f"No existe el catálogo de acciones: {ruta}\n"
-                    f"Crea una plantilla con: python main.py acciones --crear"
+                    f"Crea una plantilla con: file-manager acciones --crear"
                 )
             return {}
         try:

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "file-manager-cli-jordicha"
+version = "1.0.0"
+description = "Gestor de archivos por terminal con menú interactivo, comandos y acciones personalizadas"
+readme = "file-manager/README.md"
+requires-python = ">=3.10"
+dependencies = ["rich>=13.0"]
+authors = [{ name = "Jordicha" }]
+keywords = ["cli", "file-manager", "terminal"]
+
+[project.scripts]
+file-manager = "main:main"
+
+[tool.setuptools]
+package-dir = { "" = "file-manager" }
+py-modules = ["main"]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["file-manager"]
+include = ["modules*", "utils*"]
+
+[tool.setuptools.package-data]
+modules = ["acciones.json"]
