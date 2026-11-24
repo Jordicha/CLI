@@ -138,7 +138,7 @@ python main.py crear ~/Proyectos/2026/informe   # equivalentes a mkdir -p
 
 #### acciones (personalizadas)
 
-Incluye `acciones.json` con 5 acciones de ejemplo. Cada acción es una
+Incluye `acciones.json` con 7 acciones de ejemplo. Cada acción es una
 lista de pasos que reutilizan las operaciones del gestor:
 
 ```bash
@@ -158,6 +158,8 @@ Acciones incluidas por defecto:
 | `informes-mensuales`| Crea `informes/datos` y copia los CSV actuales.       |
 | `reporte-tamano`    | Muestra el tamaño total y avisa si supera 500 MB.     |
 | `respaldar-csv`     | Crea `backup/datos`, copia los CSV sin sobrescribir y mide el tamaño. |
+| `clasificar-con-ia` | Clasifica `~/Descargas` con IA; sin clave/red usa la extensión.      |
+| `renombrar-con-ia`  | Propone nombres para los PDF de la carpeta actual; sin IA no toca nada. |
 
 Formato del archivo:
 
@@ -175,15 +177,18 @@ Formato del archivo:
       {"renombrar": {"rutas": ["a.txt"], "prefijo": "previo_"}},
       {"buscar": {"patron": "factura", "extension": "pdf"}},
       {"tamano": {"directorio": ".", "alerta_mb": 500}},
-      {"ejecutar": "echo hola"}
+      {"ejecutar": "echo hola"},
+      {"clasificar_ia": {"directorio": "descargas", "max": 20}},
+      {"renombrar_ia": {"rutas": ["*.pdf"], "max": 10}}
     ]
   }
 }
 ```
 
 Operaciones disponibles en cada paso: `crear`, `mover`, `copiar`,
-`organizar`, `renombrar`, `buscar`, `tamano` y `ejecutar` (esta última
-pide confirmación explícita salvo con `--yes`). Los comodines (`*.csv`)
+`organizar`, `renombrar`, `buscar`, `tamano`, `ejecutar` (esta última
+pide confirmación explícita salvo con `--yes`), `clasificar_ia` y
+`renombrar_ia`. Los comodines (`*.csv`)
 se expanden sobre el directorio actual, también en `renombrar`. Todas las
 acciones respetan `--dry-run`, `--restringido` y las confirmaciones; en
 una simulación encadenada, los pasos que dependen de carpetas o archivos
@@ -196,6 +201,25 @@ y no se toca ningún fichero. Añadir una acción nueva solo requiere editar el
 JSON; la decisión de usar configuración externa se explica en el
 [ADR 0001](../docs/adr/0001-configuracion-externa.md).
 
+### Capa IA (opcional)
+
+Los pasos `clasificar_ia` y `renombrar_ia` usan OpenAI. Solo envían
+**nombres de archivo**: nunca contenidos ni rutas absolutas. La clave se lee
+de `OPENAI_API_KEY` en `.env` (o del entorno); `.env` está ignorado por Git
+y `.env.example` documenta el resto:
+
+```bash
+OPENAI_API_KEY=sk-...
+IA_MODELO=gpt-4o-mini
+IA_TIMEOUT=8
+OPENAI_BASE_URL=https://api.openai.com/v1/chat/completions
+```
+
+Si falta la clave, no hay red, la API falla o se usa `--sin-ia`, la CLI lo
+explica y sigue: `clasificar_ia` clasifica por extensión y `renombrar_ia`
+omite el paso. No hay traceback y las acciones sin IA siguen funcionando.
+Antes de mover o renombrar se pide confirmación (salvo `-y`/`--dry-run`).
+
 ### Opciones globales de seguridad
 
 | Opción               | Descripción                                             |
@@ -205,6 +229,7 @@ JSON; la decisión de usar configuración externa se explica en el
 | `--restringido`      | Bloquea operaciones fuera de los directorios permitidos.|
 | `--permitido RUTA`   | Directorio autorizado (repetible).                      |
 | `--papelera RUTA`    | Carpeta usada como papelera de eliminación segura.      |
+| `--sin-ia`           | Desactiva la IA y usa siempre el modo sin red.          |
 
 ```bash
 python main.py organizar ~/Descargas --dry-run
@@ -241,7 +266,8 @@ file-manager/
 ├── utils/
 │   ├── seguridad.py      # Confirmaciones, rutas, papelera, dry-run
 │   ├── logger.py         # Logging a logs/file-manager.log
-│   └── interfaz.py       # Colores, tablas y menús (rich)
+│   ├── interfaz.py       # Colores, tablas y menús (rich)
+│   └── ia.py             # Cliente OpenAI opcional con fallback sin red
 ├── acciones.json         # Acciones personalizadas del usuario
 ├── logs/
 ├── requirements.txt

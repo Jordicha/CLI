@@ -22,7 +22,9 @@ Formato del archivo (``acciones.json`` en la raíz del proyecto):
           {"renombrar": {"rutas": ["a.txt"], "prefijo": "previo_"}},
           {"buscar": {"patron": "factura", "extension": "pdf"}},
           {"tamano": {"directorio": ".", "alerta_mb": 100}},
-          {"ejecutar": "echo hola"}
+          {"ejecutar": "echo hola"},
+          {"clasificar_ia": {"directorio": "descargas", "max": 20}},
+          {"renombrar_ia": {"rutas": ["*.pdf"], "max": 10}}
         ]
       }
     }
@@ -30,6 +32,9 @@ Formato del archivo (``acciones.json`` en la raíz del proyecto):
 El catálogo se valida por completo antes de ejecutar cualquier paso: si
 falta un campo o tiene un tipo incorrecto se indica la acción, el paso y
 el campo, y no se produce ningún efecto parcial.
+
+Los pasos con IA solo envían nombres de archivo, nunca contenidos. Si no
+hay clave o red, o se usa ``--sin-ia``, avisan y continúan sin IA.
 
 Todos los pasos pasan por las mismas comprobaciones de seguridad
 (dry-run, modo restringido y confirmaciones) que las operaciones sueltas.
@@ -49,8 +54,9 @@ from modules.buscar import Buscar, _tamano_legible
 from modules.crear import Crear
 from modules.informacion import Informacion
 from modules.mover import Mover
-from modules.organizar import Organizar
+from modules.organizar import CATEGORIAS, CATEGORIA_OTROS, Organizar
 from modules.renombrar import Renombrar
+from utils.ia import IA, IAError
 from utils.interfaz import Interfaz
 from utils.logger import Logger
 from utils.seguridad import Seguridad
@@ -68,6 +74,8 @@ OPERACIONES = (
     "buscar",
     "tamano",
     "ejecutar",
+    "clasificar_ia",
+    "renombrar_ia",
 )
 
 CRITERIOS_ORGANIZAR = ("extension", "fecha", "creacion", "modificacion", "tamano")
@@ -124,6 +132,18 @@ PLANTILLA: Dict[str, Any] = {
     "reporte-tamano": {
         "descripcion": "Avisa si la carpeta actual supera los 500 MB.",
         "pasos": [{"tamano": {"directorio": ".", "alerta_mb": 500}}],
+    },
+    "clasificar-con-ia": {
+        "descripcion": "Clasifica ~/Descargas con IA; sin IA usa la extensión.",
+        "pasos": [
+            {"clasificar_ia": {"directorio": "~/Descargas", "max": 20}}
+        ],
+    },
+    "renombrar-con-ia": {
+        "descripcion": "Propone nombres claros para los PDF de la carpeta actual.",
+        "pasos": [
+            {"renombrar_ia": {"rutas": ["*.pdf"], "max": 10}}
+        ],
     },
 }
 
@@ -347,6 +367,20 @@ class Acciones:
         elif operacion == "ejecutar":
             texto("orden")
             numero("timeout", minimo=1)
+
+        elif operacion in ("clasificar_ia", "renombrar_ia"):
+            if operacion == "clasificar_ia":
+                texto("directorio", obligatorio=False)
+                texto("patron", obligatorio=False)
+            else:
+                lista("rutas", alias="valor")
+            maximo = args.get("max")
+            if maximo is not None and (
+                isinstance(maximo, bool)
+                or not isinstance(maximo, int)
+                or not 1 <= maximo <= 100
+            ):
+                fallar("max", "debe ser un entero entre 1 y 100")
 
     def plantilla(self, forzar: bool = False) -> Resultado:
         """Crea el archivo de acciones con una plantilla de ejemplo.
@@ -601,6 +635,12 @@ class Acciones:
         if operacion == "ejecutar":
             return self._ejecutar(args, forzar)
 
+        if operacion == "clasificar_ia":
+            return self._clasificar_ia(args, forzar)
+
+        if operacion == "renombrar_ia":
+            return self._renombrar_ia(args, forzar)
+
         self.interfaz.error(f"Operacion no implementada: {operacion}")
         return vacio
 
@@ -791,6 +831,144 @@ class Acciones:
             self.interfaz.info(texto)
         log.info("TAMANO %s -> %d bytes", ruta, total)
         resultado.ok()
+        return resultado
+
+    def _aviso_sin_ia(self, motivo: str) -> None:
+        self.interfaz.aviso(
+            f"IA no disponible ({motivo}). Se continúa sin IA; "
+            "define OPENAI_API_KEY en .env para activarla."
+        )
+
+    def _mapa_ia(
+        self, sistema: str, usuario: str, permitidos: set
+    ) -> Optional[Dict[str, str]]:
+        try:
+            datos = IA(sin_red=self.seguridad.sin_ia).json(sistema, usuario)
+        except IAError as exc:
+            self._aviso_sin_ia(str(exc))
+            return None
+        if not datos:
+            self.interfaz.aviso("La IA no devolvió propuestas; se continúa sin IA.")
+            return None
+        mapa: Dict[str, str] = {}
+        for clave, valor in datos.items():
+            nombre = Path(str(clave)).name
+            if nombre in permitidos and isinstance(valor, str):
+                mapa[nombre] = valor
+        return mapa
+
+    def _clasificar_ia(self, args: Dict[str, Any], forzar: bool) -> Resultado:
+        """Clasifica archivos con IA; sin IA usa la clasificación local."""
+        resultado = Resultado()
+        base = Path(args.get("directorio") or ".").expanduser()
+        if not base.is_dir():
+            self.interfaz.error(f"No existe el directorio: {base}")
+            resultado.errores += 1
+            return resultado
+        archivos = sorted(
+            p for p in base.glob(args.get("patron") or "*") if p.is_file()
+        )[: args.get("max", 20)]
+        if not archivos:
+            self.interfaz.aviso("No hay archivos para clasificar con IA.")
+            return resultado
+        categorias = list(CATEGORIAS) + [CATEGORIA_OTROS]
+        sistema = (
+            "Clasificas archivos por su nombre. Responde SOLO con un objeto JSON "
+            "que mapee cada nombre recibido a UNA de estas categorías: "
+            + ", ".join(categorias)
+            + ". No inventes claves, no uses rutas y no expliques la respuesta."
+        )
+        usuario = json.dumps(
+            {"archivos": [p.name for p in archivos]}, ensure_ascii=False
+        )
+        mapa = self._mapa_ia(sistema, usuario, {p.name for p in archivos})
+        if mapa is None:
+            self.interfaz.aviso("Clasificación local por extensión (sin IA).")
+            return Organizar(self.seguridad).organizar(str(base), criterio="extension")
+        if not self.seguridad.confirmar(
+            f"La IA propone clasificar {len(mapa)} archivo(s). ¿Aplicar?", forzar=forzar
+        ):
+            self.interfaz.info("Cancelado: no se han movido archivos.")
+            resultado.omitidos += len(mapa)
+            return resultado
+        for nombre, categoria in mapa.items():
+            if categoria not in categorias:
+                self.interfaz.aviso(
+                    f"Categoría desconocida para {nombre}: {categoria}"
+                )
+                resultado.omitidos += 1
+                continue
+            parcial = Mover(self.seguridad).mover(
+                [str(base / nombre)],
+                str(base / categoria),
+                crear_destino=True,
+                no_sobrescribir=True,
+                forzar=forzar,
+            )
+            resultado.exito += parcial.exito
+            resultado.omitidos += parcial.omitidos
+            resultado.errores += parcial.errores
+        return resultado
+
+    def _renombrar_ia(self, args: Dict[str, Any], forzar: bool) -> Resultado:
+        """Propone nombres con IA; sin IA omite el paso y avisa."""
+        vacio = Resultado()
+        rutas = self._requerir_lista(args, "rutas", vacio)
+        if not rutas:
+            return vacio
+        archivos = [p for p in (Path(r).expanduser() for r in rutas) if p.is_file()]
+        archivos = archivos[: args.get("max", 20)]
+        if not archivos:
+            self.interfaz.aviso("No hay archivos para renombrar con IA.")
+            return Resultado()
+        por_nombre = {p.name: p for p in archivos}
+        resultado = Resultado()
+        sistema = (
+            "Propones nombres de archivo claros y breves. Responde SOLO con un "
+            "objeto JSON que mapee cada nombre recibido a un nuevo nombre. "
+            "Conserva la extensión y no uses rutas ni barras."
+        )
+        usuario = json.dumps({"archivos": list(por_nombre)}, ensure_ascii=False)
+        mapa = self._mapa_ia(sistema, usuario, set(por_nombre))
+        if mapa is None:
+            self.interfaz.aviso(
+                f"Sin IA no hay propuestas de nombre; se omiten {len(archivos)} archivo(s)."
+            )
+            resultado.omitidos += len(archivos)
+            return resultado
+        validados: Dict[str, str] = {}
+        usados: set = set()
+        for original, nuevo in mapa.items():
+            if (
+                not nuevo
+                or Path(nuevo).name != nuevo
+                or "/" in nuevo
+                or "\\" in nuevo
+                or nuevo in (".", "..")
+                or Path(nuevo).suffix.lower() != Path(original).suffix.lower()
+                or nuevo in usados
+            ):
+                self.interfaz.aviso(
+                    f"Nombre propuesto descartado para {original}: {nuevo}"
+                )
+                resultado.omitidos += 1
+                continue
+            validados[original] = nuevo
+            usados.add(nuevo)
+        if not validados:
+            return resultado
+        if not self.seguridad.confirmar(
+            f"La IA propone renombrar {len(validados)} archivo(s). ¿Aplicar?", forzar=forzar
+        ):
+            self.interfaz.info("Cancelado: no se han renombrado archivos.")
+            resultado.omitidos += len(validados)
+            return resultado
+        renombrar = Renombrar(self.seguridad)
+        for original, nuevo in validados.items():
+            parcial = renombrar.renombrar(str(por_nombre[original]), nuevo, forzar=forzar)
+            resultado.exito += parcial.exito
+            resultado.omitidos += parcial.omitidos
+            resultado.errores += parcial.errores
         return resultado
 
     def _ejecutar(self, args: Dict[str, Any], forzar: bool) -> Resultado:

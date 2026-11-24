@@ -77,5 +77,27 @@
         }
       }
     ]
+  },
+  "clasificar-con-ia": {
+    "descripcion": "Clasifica ~/Descargas con IA; si no hay clave o red, clasifica por extension.",
+    "pasos": [
+      {
+        "clasificar_ia": {
+          "directorio": "~/Descargas",
+          "max": 20
+        }
+      }
+    ]
+  },
+  "renombrar-con-ia": {
+    "descripcion": "Propone nombres claros para los PDF de la carpeta actual; sin IA no los toca.",
+    "pasos": [
+      {
+        "renombrar_ia": {
+          "rutas": ["*.pdf"],
+          "max": 10
+        }
+      }
+    ]
   }
 }

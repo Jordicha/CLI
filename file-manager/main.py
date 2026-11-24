@@ -71,6 +71,11 @@ def _anadir_comunes(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Carpeta usada como papelera de eliminacion segura.",
     )
+    parser.add_argument(
+        "--sin-ia",
+        action="store_true",
+        help="Desactivar las acciones con IA (modo sin red).",
+    )
 
 
 def crear_parser() -> argparse.ArgumentParser:
@@ -181,6 +186,7 @@ def crear_seguridad(args: argparse.Namespace) -> Seguridad:
         rutas_permitidas=getattr(args, "permitido", None) or [],
         confirmador=lambda pregunta: Interfaz.confirmar(pregunta, por_defecto=False),
         papelera_dir=getattr(args, "papelera", None),
+        sin_ia=getattr(args, "sin_ia", False),
     )
 
 

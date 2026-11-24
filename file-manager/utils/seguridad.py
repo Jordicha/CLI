@@ -27,6 +27,7 @@ class Seguridad:
         rutas_permitidas: Optional[Sequence[str]] = None,
         confirmador: Optional[Callable[[str], bool]] = None,
         papelera_dir: Optional[str] = None,
+        sin_ia: bool = False,
     ) -> None:
         """Inicializa el gestor de seguridad.
 
@@ -38,7 +39,9 @@ class Seguridad:
             confirmador: Función ``pregunta -> bool`` para pedir confirmación.
                 Si es ``None``, las confirmaciones destructivas se deniegan.
             papelera_dir: Directorio usado como papelera de eliminación segura.
+            sin_ia: Desactiva las acciones con IA (equivalente al modo sin red).
         """
+        self.sin_ia = sin_ia
         self.dry_run = dry_run
         self.restringido = restringido
         self.rutas_permitidas: List[Path] = [
